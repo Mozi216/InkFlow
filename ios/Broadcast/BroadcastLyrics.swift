@@ -80,8 +80,10 @@ import OSLog
             state.anchorDate = Date()
             state.playing = false
             state.connectionActive = false
+            state.complete = true
             lastState = state
         }
+        if let connection, (try? BroadcastStore.read().id) == connection.id { BroadcastStore.clear() }
         await publisher?.finish(lastState)
         publisher = nil
         connection = nil

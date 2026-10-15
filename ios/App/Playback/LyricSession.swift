@@ -319,6 +319,13 @@ import InkFlowCore
                 state = update.state
                 capturing = update.state.connectionActive == true
                 status = update.state.message ?? "系统音频连接"
+                if update.state.complete == true {
+                    capturing = false
+                    broadcastPrepared = false
+                    status = "音频连接已结束"
+                    await broadcastRelay.stop()
+                    return
+                }
                 let now = ProcessInfo.processInfo.systemUptime
                 if now - lastPublicationLog >= 5 {
                     lastPublicationLog = now

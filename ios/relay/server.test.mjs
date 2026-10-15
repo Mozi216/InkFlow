@@ -66,6 +66,9 @@ test('ending or expiring a session prevents any further updates', async t => {
   await f.call(`/sessions/${s.id}/updates`, { sequence: 1, state }, s.uploadKey);
   assert.equal((await f.call(`/sessions/${s.id}/end`, {}, s.uploadKey)).status, 200);
   assert.equal(messages.at(-1).aps.event, 'end');
+  assert.equal(messages.at(-1).aps['content-state'].playing, false);
+  assert.equal(messages.at(-1).aps['content-state'].connectionActive, false);
+  assert.equal(messages.at(-1).aps['content-state'].complete, true);
   assert.equal((await f.call(`/sessions/${s.id}/updates`, { sequence: 2, state }, s.uploadKey)).status, 410);
   const expired = await f.register(); f.advance(7 * 60 * 60 * 1000);
   assert.equal((await f.call(`/sessions/${expired.id}/updates`, { sequence: 1, state }, expired.uploadKey)).status, 410);

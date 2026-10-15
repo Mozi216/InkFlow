@@ -35,7 +35,16 @@ export function payloadFor(state, event, now = Date.now()) {
   // APNs envelope dates are separately expressed as Unix seconds.
   const timestamp = Math.floor(now / 1000);
   const aps = { timestamp, event, 'content-state': structuredClone(state), 'stale-date': timestamp + 45 };
-  if (event === 'end') aps['dismissal-date'] = timestamp;
+  if (event === 'end') {
+    aps['dismissal-date'] = timestamp;
+    const ended = aps['content-state'];
+    const referenceTime = now / 1000 - 978307200;
+    if (ended.playing) ended.position += Math.max(0, referenceTime - ended.anchorDate);
+    ended.anchorDate = referenceTime;
+    ended.playing = false;
+    ended.connectionActive = false;
+    ended.complete = true;
+  }
   const payload = { aps };
   if (Buffer.byteLength(JSON.stringify(payload)) > 4000) delete aps['content-state'].artwork;
   if (Buffer.byteLength(JSON.stringify(payload)) > 4000) throw new RequestError(413);
