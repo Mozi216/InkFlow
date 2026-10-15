@@ -16,11 +16,11 @@ struct InkFlowWidget: Widget {
                     IslandArtwork(state: context.state, stale: context.isStale)
                 }
             } compactLeading: {
-                CompactLyricArtwork(state: context.state, stale: context.isStale, side: 0)
-            } compactTrailing: {
-                CompactLyricArtwork(state: context.state, stale: context.isStale, side: 1)
-            } minimal: {
                 CompactLyricArtwork(state: context.state, stale: context.isStale)
+            } compactTrailing: {
+                SongArtwork(state: context.state).frame(width: 20, height: 20)
+            } minimal: {
+                CompactLyricArtwork(state: context.state, stale: context.isStale, minimal: true)
             }
             .keylineTint(.white.opacity(0.35))
             .widgetURL(URL(string: "inkflow://lyrics"))
@@ -52,7 +52,7 @@ private struct IslandArtwork: View {
                 .accessibilityLabel("等待音乐")
         } else {
             ZStack {
-                LyricArtwork(state: state, time: state.position, systemTimedFill: true)
+                LyricArtwork(state: state, time: state.time(at: Date()), systemTimedFill: true)
                     .id(state.line.id)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 8)),
                                             removal: .opacity.combined(with: .offset(y: -6))))

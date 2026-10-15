@@ -24,11 +24,11 @@ struct LayoutCheckView: View {
         return VStack(spacing: 8) {
             Text(text).font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 0) {
-                CompactLyricArtwork(state: state, stale: false, side: 0)
+                CompactLyricArtwork(state: state, stale: false)
                 Color.clear.frame(width: 126, height: 27)
-                CompactLyricArtwork(state: state, stale: false, side: 1)
+                SongArtwork(state: state).frame(width: 20, height: 20)
             }.padding(6).background(.black, in: Capsule())
-            CompactLyricArtwork(state: state, stale: false)
+            CompactLyricArtwork(state: state, stale: false, minimal: true)
                 .padding(5).background(.black, in: Capsule())
         }
     }

@@ -25,26 +25,22 @@ struct SongArtwork: View {
 struct CompactLyricArtwork: View {
     let state: LyricActivity.ContentState
     let stale: Bool
-    // nil is the system's minimal presentation when another activity shares the island.
-    var side: Int? = nil
+    var minimal = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isLuminanceReduced) private var dimmed
 
     var body: some View {
-        let phrase = side != nil && state.complete == true && StageLayout.fallbackWidth(state.line.text) <= 12
-            ? state.line : CompactLyrics.phrase(state.line, at: state.position)
+        let position = state.time(at: Date())
+        let phrase = CompactLyrics.phrase(state.line, at: position)
         let columns = CompactLyrics.columns(phrase)
         let reduce = reduceMotion || dimmed
-        let movement = state.position + (state.playing && !reduce ? 1.25 : 0)
         ZStack {
             if stale || state.line.text.isEmpty {
                 Image(systemName: stale ? "pause.circle" : "waveform").foregroundStyle(.secondary)
             } else {
                 Group {
-                    if let side {
-                        if columns[side].text.isEmpty {
-                            SongArtwork(state: state).frame(width: 22, height: 22)
-                        } else { lettering(columns[side], width: 72, limit: 14) }
+                    if !minimal {
+                        lettering(phrase, width: 96, limit: 14)
                     } else if columns[0].text.isEmpty {
                         lettering(columns[1], width: 42, limit: 13)
                     } else {
@@ -55,14 +51,10 @@ struct CompactLyricArtwork: View {
                     }
                 }
                 .id(phrase.id)
-                .offset(y: reduce ? 0 : sin(movement * 0.7 + Double(side ?? 0) * .pi) * 0.5)
-                .rotationEffect(.degrees(reduce ? 0 : sin(movement * 0.55) * 0.65))
-                .animation(state.playing && !reduce ? .linear(duration: 1.25) : nil, value: movement)
-                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 4)),
-                                        removal: .opacity.combined(with: .offset(y: -4))))
+                .transition(.opacity)
             }
         }
-        .frame(width: side == nil ? 42 : 72, height: 27, alignment: .center)
+        .frame(width: minimal ? 42 : 96, height: 27, alignment: .center)
         .clipped()
         .animation(reduce ? nil : .easeInOut(duration: 0.3), value: phrase.id)
         .accessibilityLabel(stale ? "歌词更新已中断" : phrase.text)
@@ -84,7 +76,7 @@ struct CompactLyricArtwork: View {
                 if index > 0 && word.space { Color.clear.frame(width: font * space, height: 1) }
                 let placed = PlacedToken(token: word, x: 0, y: 0, font: font,
                                          width: word.units * font, row: 0, index: index)
-                let fill = fillProgress(at: state.position, start: word.start, end: word.end)
+                let fill = fillProgress(at: state.time(at: Date()), start: word.start, end: word.end)
                 let text = Text(word.text).font(Font(baseFont.withSize(font)))
                     .fixedSize().contentTransition(.identity)
                 ZStack(alignment: .leading) {

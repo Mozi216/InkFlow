@@ -13,10 +13,9 @@ if [[ "${sdk%%.*}" -lt 27 ]]; then
   echo 'The installed iOS SDK is older than 27.' >&2
   exit 1
 fi
-if [[ "${INKFLOW_DEVICE_ONLY:-false}" != true ]]; then
-  swift test --package-path InkFlowCore 2>&1 | tee build/core-tests.log
-else
-  echo 'Device-only render iteration: core tests and simulator are not run in this invocation.' | tee build/verification-scope.log
+swift test --package-path InkFlowCore 2>&1 | tee build/core-tests.log
+if [[ "${INKFLOW_DEVICE_ONLY:-false}" == true ]]; then
+  echo 'Device iteration: core tests and device compilation run; simulator compilation and screenshots are skipped.' | tee build/verification-scope.log
 fi
 xcodegen generate --spec project.yml
 if [[ "${INKFLOW_DEVICE_ONLY:-false}" != true ]]; then

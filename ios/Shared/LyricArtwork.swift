@@ -13,7 +13,8 @@ struct LyricArtwork: View {
     var body: some View {
         let plan = NativeTypesetting.plan(state)
         let reduce = reducedMotion || dimmed
-        let poses = StageMotion.poses(plan, at: time, waiting: state.waiting, reduced: reduce)
+        let poses = StageMotion.poses(plan, at: time, waiting: state.waiting,
+                                      reduced: reduce, anchored: systemTimedFill)
         // Give the compositor a destination beyond the next heartbeat. Timer masks
         // still use the actual lyric clock; only the decorative motion looks ahead.
         let moving = state.playing && !reduce
@@ -28,7 +29,7 @@ struct LyricArtwork: View {
                         token(pose, style: plan.style)
                             .animation(nil, value: state.revision)
                             .scaleEffect(pose.scale)
-                            .rotationEffect(.degrees(pose.rotation))
+                            .rotationEffect(.degrees(pose.rotation + (systemTimedFill ? ambient.rotation : 0)))
                             .opacity(systemTimedFill ? (state.waiting ? 0.7 : 1) : pose.opacity)
                             .blur(radius: pose.blur)
                             .position(x: pose.x, y: pose.y)
@@ -38,9 +39,9 @@ struct LyricArtwork: View {
                     }
                 }
                 .frame(width: plan.width, height: plan.height)
-                .scaleEffect(ambient.scale)
-                .rotationEffect(.degrees(ambient.rotation))
-                .offset(x: ambient.x, y: ambient.y)
+                .scaleEffect(systemTimedFill ? 1 : ambient.scale)
+                .rotationEffect(.degrees(systemTimedFill ? 0 : ambient.rotation))
+                .offset(x: systemTimedFill ? 0 : ambient.x, y: systemTimedFill ? 0 : ambient.y)
                 .animation(systemTimedFill && moving ? .linear(duration: 1.25) : nil,
                            value: state.revision)
                 if state.appearance.rows == 2, plan.style != .columns, let next = state.next {

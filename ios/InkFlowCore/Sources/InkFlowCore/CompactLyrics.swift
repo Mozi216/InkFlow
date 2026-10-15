@@ -30,7 +30,7 @@ public enum CompactLyrics {
         return parts.last(where: { $0.start <= time }) ?? parts.first ?? line
     }
 
-    /// Balance complete words around the camera, instead of squeezing a line into one side.
+    /// Balance two short rows for the minimal presentation, keeping words intact.
     public static func columns(_ phrase: LyricLine) -> [LyricLine] {
         let tokens = StageLayout.tokens(phrase)
         guard tokens.count > 1 else { return [makeLine([]), phrase] }

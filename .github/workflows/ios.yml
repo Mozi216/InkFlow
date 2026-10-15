@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
       device_only:
-        description: Device build only for a rendering fix after core tests have already passed
+        description: Run core tests and device build, without simulator screenshots
         type: boolean
         default: false
 permissions:
