@@ -9,6 +9,10 @@ on:
         description: Build a signed IPA for registered test iPhones
         type: boolean
         default: false
+      device_only:
+        description: Device build only for a rendering fix after core tests have already passed
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -23,11 +27,15 @@ jobs:
       - name: Install project generator
         run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
       - name: Start preview simulator
+        if: ${{ !inputs.device_only }}
         continue-on-error: true
         run: python3 ios/scripts/capture-simulator.py --boot-only
       - name: Test core and compile both iOS targets
+        env:
+          INKFLOW_DEVICE_ONLY: ${{ inputs.device_only }}
         run: bash ios/scripts/build.sh
       - name: Capture native app previews
+        if: ${{ !inputs.device_only }}
         timeout-minutes: 12
         run: python3 ios/scripts/capture-simulator.py
       - name: Create device IPA
