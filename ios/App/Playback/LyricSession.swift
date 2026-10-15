@@ -125,7 +125,9 @@ import InkFlowCore
             return
         }
         if usesBroadcast {
+            connecting = true
             await prepareBroadcast()
+            connecting = false
             return
         }
         connecting = true
@@ -151,6 +153,7 @@ import InkFlowCore
     func stopCapture() async {
         broadcastPrepared = false
         await capture.stop()
+        state = nil
     }
 
     private func prepareBroadcast() async {
@@ -164,6 +167,7 @@ import InkFlowCore
         state = content
         status = "点击下方系统按钮开始连接"
         await startIsland()
+        if activity == nil { broadcastPrepared = false }
     }
 
     func startPreview() async {
