@@ -6,6 +6,7 @@ import InkFlowCore
     var onFailure: ((String) -> Void)?
     private var tokenUpdates: Task<Void, Never>?
     private var connection: BroadcastConnection?
+    private var generation = 0
 
     static var unavailableReason: String? {
         guard BroadcastStore.folder != nil else {
@@ -18,18 +19,25 @@ import InkFlowCore
     }
 
     func prepare(_ activity: Activity<LyricActivity>, appearance: Appearance) async throws {
+        generation += 1
+        let attempt = generation
         guard let configuration = RelayConfiguration.load() else {
             throw RelayError.unavailable("尚未配置歌词推送服务。")
         }
         try configuration.validate()
         let token = try await firstToken(activity)
+        guard attempt == generation else { throw CancellationError() }
         let data = try await RelayRequest.send(Registration(token: token.hex,
             bundleID: Bundle.main.bundleIdentifier ?? "", state: activity.content.state), server: configuration.server,
             path: "sessions", key: configuration.accessKey)
         let registered = try JSONDecoder().decode(RegistrationResult.self, from: data)
         // APNs accepting a request is not proof that iOS decoded or displayed it.
         // Require its marker to return through ActivityKit before permitting audio capture.
-        do { try await confirmDelivery(activity, id: registered.id) }
+        do {
+            guard attempt == generation else { throw CancellationError() }
+            try await confirmDelivery(activity, id: registered.id)
+            guard attempt == generation else { throw CancellationError() }
+        }
         catch {
             _ = try? await RelayRequest.send([String: String](), server: configuration.server,
                 path: "sessions/\(registered.id)/end", key: registered.uploadKey)
@@ -39,8 +47,8 @@ import InkFlowCore
             server: configuration.server, expires: Date(timeIntervalSince1970: registered.expires),
             appearance: appearance)
         // Save only after APNs token registration succeeds; only then reveal the broadcast picker.
-        try BroadcastStore.write(connection)
         self.connection = connection
+        try BroadcastStore.write(connection)
         observeTokens(activity, connection: connection)
     }
 
@@ -58,6 +66,7 @@ import InkFlowCore
     }
 
     func stop() async {
+        generation += 1
         tokenUpdates?.cancel()
         tokenUpdates = nil
         let old = connection

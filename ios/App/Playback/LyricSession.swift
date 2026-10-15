@@ -164,6 +164,7 @@ import InkFlowCore
     }
 
     func stopCapture() async {
+        generation += 1
         broadcastPrepared = false
         await broadcastRelay.stop()
         await capture.stop()
@@ -172,6 +173,7 @@ import InkFlowCore
 
     private func prepareBroadcast() async {
         await stopCapture()
+        let preparation = generation
         tick?.cancel()
         preview = false
         var content = LyricActivity.ContentState.waiting(appearance: appearance)
@@ -180,13 +182,16 @@ import InkFlowCore
         state = content
         status = "正在准备实时活动推送连接"
         await startIsland()
+        guard preparation == generation else { return }
         guard let activity else { return }
         do {
             try await broadcastRelay.prepare(activity, appearance: appearance)
+            guard preparation == generation else { return }
             broadcastPrepared = true
             status = "点击下方系统按钮开始连接"
             observeBroadcast(activity)
         } catch {
+            guard preparation == generation else { return }
             await broadcastRelay.stop()
             await retireIsland()
             status = error.localizedDescription
@@ -286,6 +291,7 @@ import InkFlowCore
     }
 
     func endIsland() async {
+        generation += 1
         broadcastPrepared = false
         await broadcastRelay.stop()
         await retireIsland()

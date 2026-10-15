@@ -85,6 +85,15 @@ test('registration fails before the audio picker is offered if APNs rejects the 
   assert.equal((await response.json()).uploadKey, undefined);
 });
 
+test('registration sends the confirmation marker without claiming audio capture has started', async t => {
+  let delivered;
+  const f = await fixture(t, async (_, payload) => { delivered = payload.aps['content-state']; });
+  const session = await f.register();
+  assert.equal(delivered.relaySession, session.id);
+  assert.equal(delivered.connectionActive, false);
+  assert.equal(delivered.anchorDate, state.anchorDate);
+});
+
 test('large artwork is dropped; oversized lyrics are rejected without truncating words', () => {
   const payload = payloadFor({ ...state, artwork: 'x'.repeat(5000) }, 'update');
   assert.equal(payload.aps['content-state'].artwork, undefined);
