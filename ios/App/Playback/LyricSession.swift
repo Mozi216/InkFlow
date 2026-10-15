@@ -314,11 +314,12 @@ import InkFlowCore
     private func received(_ observation: SongMatch) {
         guard capturing, !preview else { return }
         match = observation
-        quiet = false
+        quiet = ProcessInfo.processInfo.systemUptime - lastSound >= 1.5
         let key = observation.title + "|" + observation.artist
         diagnostics.record("match", ["position": String(observation.position), "song": observation.title])
         if key == matchKey, trackID != nil {
-            clock.align(position: observation.position, at: observation.uptime, running: true)
+            clock.followAudio(position: observation.position, observedAt: observation.uptime,
+                              lastSound: lastSound, now: ProcessInfo.processInfo.systemUptime)
             status = document.precision == .word ? "逐字同步" : "逐行同步 · 填充为估计"
             refresh()
             return
@@ -365,7 +366,8 @@ import InkFlowCore
             title = song.title
             let latest = match ?? observed
             clock.duration = song.duration
-            clock.align(position: latest.position, at: latest.uptime, running: !quiet)
+            clock.followAudio(position: latest.position, observedAt: latest.uptime,
+                              lastSound: lastSound, now: ProcessInfo.processInfo.systemUptime)
             status = lyrics.lines.isEmpty ? "这首歌没有歌词" : (lyrics.precision == .word ? "逐字同步" : "逐行同步 · 填充为估计")
             diagnostics.record("lyrics", ["id": String(song.id), "lines": String(lyrics.lines.count), "precision": lyrics.precision.rawValue])
             refresh()

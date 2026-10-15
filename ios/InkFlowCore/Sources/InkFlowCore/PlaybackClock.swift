@@ -29,4 +29,11 @@ public struct PlaybackClock: Sendable {
         anchor = uptime
         running = false
     }
+
+    public mutating func followAudio(position: Double, observedAt: Double, lastSound: Double, now: Double) {
+        let audible = now - lastSound < 1.5
+        // A late recognition result must not restart the clock after audio has stopped.
+        let heardPosition = audible ? position : max(0, position + lastSound - observedAt)
+        align(position: heardPosition, at: audible ? observedAt : now, running: audible)
+    }
 }

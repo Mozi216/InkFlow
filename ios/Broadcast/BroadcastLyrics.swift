@@ -127,7 +127,8 @@ import OSLog
         let key = observation.title + "|" + observation.artist
         if key == songKey {
             if document != nil {
-                clock.align(position: observation.position, at: observation.uptime, running: true)
+                clock.followAudio(position: observation.position, observedAt: observation.uptime,
+                                  lastSound: lastSound, now: ProcessInfo.processInfo.systemUptime)
                 refresh(force: true)
             }
             return
@@ -152,7 +153,8 @@ import OSLog
                 guard !Task.isCancelled, generation == requestGeneration else { return }
                 document = lyrics
                 clock.duration = song.duration
-                clock.align(position: observation.position, at: observation.uptime, running: true)
+                clock.followAudio(position: observation.position, observedAt: observation.uptime,
+                                  lastSound: lastSound, now: ProcessInfo.processInfo.systemUptime)
                 if lyrics.lines.isEmpty { showMessage("这首歌暂时没有歌词") }
                 else { refresh(force: true) }
                 let image = await catalog.artwork(for: song)
