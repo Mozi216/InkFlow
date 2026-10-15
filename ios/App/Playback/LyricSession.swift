@@ -35,6 +35,8 @@ import InkFlowCore
     private var trackID: Int64?
     private var quiet = false
 
+    var captureUnavailableReason: String? { capture.unavailableReason }
+
     init() {
         var saved = UserDefaults.standard.data(forKey: "appearance")
             .flatMap { try? JSONDecoder().decode(Appearance.self, from: $0) } ?? Appearance()
@@ -86,6 +88,11 @@ import InkFlowCore
 
     func beginCapture() async {
         guard !capturing, !connecting else { return }
+        if let reason = capture.unavailableReason {
+            status = reason
+            diagnostics.record("capture-unavailable", ["reason": reason])
+            return
+        }
         connecting = true
         generation += 1
         resolveTask?.cancel()

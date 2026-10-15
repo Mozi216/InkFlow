@@ -1,109 +1,53 @@
 import Foundation
 
-#if targetEnvironment(simulator)
-// iOS 模拟器 SDK 没有 ScreenCaptureKit。效果预览可运行，采集必须用真机验证。
+protocol AudioCaptureDriver: AnyObject {
+    var onState: (@MainActor (String, Bool) -> Void)? { get set }
+    var onEnd: (@MainActor () async -> Void)? { get set }
+    @MainActor func start()
+    @MainActor func stop() async
+}
+
 @MainActor final class SystemAudioCapture {
     let recognition = AudioRecognition()
-    var onState: (@MainActor (String, Bool) -> Void)?
-    var onEnd: (@MainActor () async -> Void)?
+    private var driver: AudioCaptureDriver?
+    var onState: (@MainActor (String, Bool) -> Void)? {
+        didSet { driver?.onState = onState }
+    }
+    var onEnd: (@MainActor () async -> Void)? {
+        didSet { driver?.onEnd = onEnd }
+    }
+
+    var unavailableReason: String? {
+        #if targetEnvironment(simulator)
+        return "系统音频采集需要 iOS 27 真机；模拟器可测试歌词预览。"
+        #else
+        if #available(iOS 27.0, *) { return nil }
+        return "当前系统可测试歌词效果与灵动岛；自动识别网易云音频需要 iOS 27。"
+        #endif
+    }
+
+    init() {
+        #if !targetEnvironment(simulator)
+        if #available(iOS 27.0, *) {
+            driver = ScreenAudioCapture(recognition: recognition)
+        }
+        #endif
+    }
 
     func start() {
-        onState?("系统音频采集需要 iPhone 真机", false)
-        Task { await onEnd?() }
-    }
-    func stop() async { onState?("未连接", false); await onEnd?() }
-}
-#else
-import ScreenCaptureKit
-import CoreMedia
-
-final class SystemAudioCapture: NSObject, SCContentSharingPickerObserver, SCStreamOutput, SCStreamDelegate {
-    let recognition = AudioRecognition()
-    var onState: (@MainActor (String, Bool) -> Void)?
-    var onEnd: (@MainActor () async -> Void)?
-    @MainActor private var activeStream: SCStream?
-    @MainActor private var generation = 0
-    @MainActor private var choosing = false
-
-    @MainActor func start() {
-        guard activeStream == nil, !choosing else { return }
-        generation += 1
-        choosing = true
-        let picker = SCContentSharingPicker.shared
-        var configuration = SCContentSharingPickerConfiguration()
-        configuration.showsMicrophoneControl = false
-        configuration.showsCameraControl = false
-        picker.defaultConfiguration = configuration
-        picker.add(self)
-        picker.isActive = true
-        picker.present()
-        onState?("请选择整个屏幕，然后在网易云播放", false)
+        guard let driver else {
+            onState?(unavailableReason ?? "系统音频采集不可用", false)
+            Task { await onEnd?() }
+            return
+        }
+        driver.start()
     }
 
-    @MainActor func stop() async {
-        generation += 1
-        choosing = false
-        let stream = activeStream
-        activeStream = nil
-        recognition.stop()
-        SCContentSharingPicker.shared.remove(self)
-        SCContentSharingPicker.shared.isActive = false
-        try? await stream?.stopCapture()
-        onState?("未连接", false)
-        await onEnd?()
-    }
-
-    @MainActor private func begin(_ filter: SCContentFilter) async {
-        guard choosing else { return }
-        choosing = false
-        let requestGeneration = generation
-        let config = SCStreamConfiguration()
-        config.capturesAudio = true
-        config.excludesCurrentProcessAudio = true
-        config.sampleRate = 48_000
-        config.channelCount = 1
-        // 保留系统要求的视频输出，只接收低分辨率画面并立即丢弃。
-        config.width = 32
-        config.height = 32
-        let stream = SCStream(filter: filter, configuration: config, delegate: self)
-        do {
-            try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: recognition.queue)
-            try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: recognition.queue)
-            recognition.reset()
-            try await stream.startCapture()
-            guard requestGeneration == generation else { try? await stream.stopCapture(); return }
-            activeStream = stream
-            onState?("正在识别音乐", true)
-        } catch {
-            recognition.stop()
-            SCContentSharingPicker.shared.remove(self)
-            SCContentSharingPicker.shared.isActive = false
-            onState?(error.localizedDescription, false)
+    func stop() async {
+        if let driver { await driver.stop() }
+        else {
+            onState?("未连接", false)
             await onEnd?()
         }
     }
-
-    func contentSharingPicker(_ picker: SCContentSharingPicker, didUpdateWith filter: SCContentFilter, for stream: SCStream?) {
-        Task { @MainActor in await begin(filter) }
-    }
-    func contentSharingPicker(_ picker: SCContentSharingPicker, didCancelFor stream: SCStream?) {
-        Task { @MainActor in
-            guard activeStream == nil else { return }
-            await stop()
-        }
-    }
-    func contentSharingPickerStartDidFailWithError(_ error: any Error) {
-        Task { @MainActor in await stop(); onState?(error.localizedDescription, false) }
-    }
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
-        if outputType == .audio { recognition.consume(sampleBuffer) }
-    }
-    func stream(_ stream: SCStream, didStopWithError error: any Error) {
-        Task { @MainActor in
-            guard stream === activeStream else { return }
-            await stop()
-            onState?(error.localizedDescription, false)
-        }
-    }
 }
-#endif
