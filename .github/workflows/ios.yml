@@ -1,0 +1,44 @@
+name: InkFlow iOS
+on:
+  push:
+    branches: [codex/ios-native]
+    paths: [ios/**, .github/workflows/ios.yml]
+  workflow_dispatch:
+    inputs:
+      signed_ipa:
+        description: Build a signed IPA for registered test iPhones
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install project generator
+        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Test core and compile both iOS targets
+        run: bash ios/scripts/build.sh
+      - name: Capture native app previews
+        run: python3 ios/scripts/capture-simulator.py
+      - name: Create device IPA
+        if: inputs.signed_ipa
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_APP_PROFILE_BASE64: ${{ secrets.IOS_APP_PROFILE_BASE64 }}
+          IOS_WIDGET_PROFILE_BASE64: ${{ secrets.IOS_WIDGET_PROFILE_BASE64 }}
+        run: bash ios/scripts/archive.sh
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: InkFlow-iOS-build-results
+          path: |
+            ios/build/*.log
+            ios/build/export/*.ipa
+            ios/build/unsigned/InkFlow-unsigned.ipa
+            ios/build/app-preview/*
+          if-no-files-found: warn
+          retention-days: 7

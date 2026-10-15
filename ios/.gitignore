@@ -1,0 +1,9 @@
+.build/
+InkFlow.xcodeproj/
+build/
+*.xcuserstate
+*.mobileprovision
+*.p12
+*.p8
+*.ipa
+.DS_Store

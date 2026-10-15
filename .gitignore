@@ -1,0 +1,6 @@
+release/
+artifacts/
+tools/
+__pycache__/
+.DS_Store
+*.log
