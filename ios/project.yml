@@ -13,7 +13,7 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: "26.0"
     TARGETED_DEVICE_FAMILY: "1"
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "8"
+    CURRENT_PROJECT_VERSION: "9"
     INKFLOW_BUNDLE_ID: com.inkflow.mobile
     INKFLOW_RELAY_GROUP: group.$(INKFLOW_BUNDLE_ID)
     INKFLOW_APNS_ENVIRONMENT: production
@@ -60,6 +60,7 @@ targets:
       - path: Broadcast
       - path: Shared/LyricActivity.swift
       - path: Shared/BroadcastConnection.swift
+      - path: Shared/LocalBroadcastStore.swift
       - path: App/Sync/AudioRecognition.swift
       - path: App/Sync/NetEaseClient.swift
     dependencies:

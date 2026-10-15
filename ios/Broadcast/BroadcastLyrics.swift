@@ -6,9 +6,9 @@ import OSLog
     var onFailure: ((String) -> Void)?
     private let recognition: AudioRecognition
     private let catalog = NetEaseClient()
-    private var publisher: BroadcastPublisher?
+    private var publisher: LocalBroadcastPublisher?
     private let logger = Logger(subsystem: "com.inkflow.mobile", category: "BroadcastLyrics")
-    private var connection: BroadcastConnection?
+    private var connection: LocalBroadcastSession?
     private var lastState: LyricActivity.ContentState?
     private var clock = PlaybackClock()
     private var dates = PlaybackDates()
@@ -29,17 +29,20 @@ import OSLog
     init(recognition: AudioRecognition) { self.recognition = recognition }
 
     func start() {
-        do { connection = try BroadcastStore.read() }
+        do { connection = try LocalBroadcastStore.readSession() }
         catch {
-            onFailure?("没有已准备的推送连接。请先在 InkFlow 检查签名和推送服务配置。")
+            onFailure?("没有已准备的本机连接。请先在 InkFlow 点开始同步。")
             return
         }
         guard let connection else { return }
-        let publisher = BroadcastPublisher(connection: connection)
+        let publisher = LocalBroadcastPublisher(sessionID: connection.id)
         publisher.onFailure = { [weak self] reason in self?.onFailure?(reason) }
         self.publisher = publisher
         started = true
-        logger.info("Audio recognition started with a registered relay session")
+        logger.info("Local audio recognition started; no APNs or relay server")
+        recognition.onProgress = { [weak self] seconds in
+            Task { @MainActor in self?.publisher?.progress(seconds) }
+        }
         recognition.onMatch = { [weak self] observation in
             Task { @MainActor in self?.matched(observation) }
         }
@@ -83,7 +86,6 @@ import OSLog
             state.complete = true
             lastState = state
         }
-        if let connection, (try? BroadcastStore.read().id) == connection.id { BroadcastStore.clear() }
         await publisher?.finish(lastState)
         publisher = nil
         connection = nil
@@ -91,7 +93,7 @@ import OSLog
 
     func checkConnection() {
         guard started, let connection else { return }
-        guard let saved = try? BroadcastStore.read(), saved.id == connection.id else {
+        guard let saved = try? LocalBroadcastStore.readSession(), saved.id == connection.id else {
             started = false
             onFailure?("歌词连接已结束")
             Task { await stop() }
@@ -100,7 +102,7 @@ import OSLog
         let changed = saved.appearance != connection.appearance
         self.connection = saved
         if document != nil { refresh(force: changed) }
-        else if ProcessInfo.processInfo.systemUptime - lastPublish >= 15 {
+        else if ProcessInfo.processInfo.systemUptime - lastPublish >= 3 {
             showMessage(lastState?.message ?? "等待音乐音频；请在网易云播放")
         }
     }
@@ -183,7 +185,7 @@ import OSLog
         let clockChanged = lastState.map {
             $0.playing != clock.running || abs($0.time(at: Date()) - position) > 0.3 || $0.appearance != appearance
         } ?? true
-        guard changed || (force && clockChanged) || now - lastPublish >= 15 else { return }
+        guard changed || (force && clockChanged) || now - lastPublish >= 0.5 else { return }
         dates.update(clock, at: now, date: Date(), calibration: appearance.calibration)
         revision += 1
         var next = selection.next

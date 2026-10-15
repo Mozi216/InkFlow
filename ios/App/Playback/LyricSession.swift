@@ -26,9 +26,8 @@ import InkFlowCore
     private var document = PreviewLyrics.document
     private var clock = PlaybackClock()
     private var activity: Activity<LyricActivity>?
-    private var activityObservation: Task<Void, Never>?
     private let publisher = LiveActivityPublisher()
-    private let broadcastRelay = BroadcastRelay()
+    private let localBroadcast = LocalBroadcastBridge()
     private var playbackDates = PlaybackDates()
     private var artworkData: Data?
     private var resolveTask: Task<Void, Never>?
@@ -56,7 +55,7 @@ import InkFlowCore
         #if targetEnvironment(simulator)
         return "系统音频连接需要真机；模拟器可测试歌词预览。"
         #else
-        return usesBroadcast ? BroadcastRelay.unavailableReason : capture.unavailableReason
+        return usesBroadcast ? LocalBroadcastBridge.unavailableReason : capture.unavailableReason
         #endif
     }
 
@@ -87,9 +86,14 @@ import InkFlowCore
             diagnostics.record("capture", ["active": String(active), "message": message])
             if !active && !preview { clock.stop(at: ProcessInfo.processInfo.systemUptime); refresh() }
         }
-        broadcastRelay.onFailure = { [weak self] message in
-            self?.status = message
-            self?.diagnostics.record("relay-error", ["message": message])
+        localBroadcast.onUpdate = { [weak self] snapshot in self?.receivedLocal(snapshot) }
+        localBroadcast.onEnded = { [weak self] message in
+            guard let self else { return }
+            Task { @MainActor in
+                await stopCapture()
+                status = message
+                diagnostics.record("local-session-ended", ["message": message])
+            }
         }
         capture.onEnd = { [weak self] in
             guard let self else { return }
@@ -111,18 +115,8 @@ import InkFlowCore
             Task { @MainActor in self?.diagnostics.record("recognition-error", ["message": error]) }
         }
         refresh()
-        if let saved = try? BroadcastStore.read(),
-           let existing = Activity<LyricActivity>.activities.first(where: { $0.content.state.relaySession == saved.id }) {
-            activity = existing
-            broadcastPrepared = true
-            preview = false
-            tick?.cancel()
-            state = existing.content.state
-            capturing = state?.connectionActive == true
-            status = state?.message ?? "系统音频连接"
-            observeBroadcast(existing)
-            broadcastRelay.restore(existing)
-        }
+        diagnostics.record("local-connection-capability", ["sharedGroup": String(LocalBroadcastStore.folder != nil)])
+        try? diagnostics.export()
     }
 
     func beginCapture() async {
@@ -166,7 +160,7 @@ import InkFlowCore
     func stopCapture() async {
         generation += 1
         broadcastPrepared = false
-        await broadcastRelay.stop()
+        localBroadcast.stop()
         await capture.stop()
         state = nil
     }
@@ -180,22 +174,22 @@ import InkFlowCore
         content.source = .broadcast
         content.message = "请在 InkFlow 中确认系统音频连接"
         state = content
-        status = "正在准备实时活动推送连接"
+        status = "正在申请本机后台同步"
         await startIsland()
         guard preparation == generation else { return }
-        guard let activity else { return }
+        guard activity != nil else { return }
         do {
-            try await broadcastRelay.prepare(activity, appearance: appearance)
+            try await localBroadcast.prepare(appearance: appearance)
             guard preparation == generation else { return }
             broadcastPrepared = true
             status = "点击下方系统按钮开始连接"
-            observeBroadcast(activity)
+            diagnostics.record("local-task-started", ["duration": "1800"])
         } catch {
             guard preparation == generation else { return }
-            await broadcastRelay.stop()
+            localBroadcast.stop()
             await retireIsland()
             status = error.localizedDescription
-            diagnostics.record("relay-prepare-error", ["message": status])
+            diagnostics.record("local-prepare-error", ["message": status])
         }
     }
 
@@ -262,7 +256,6 @@ import InkFlowCore
         }
         if let activity {
             publish(state)
-            if broadcastPrepared { observeBroadcast(activity) }
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
@@ -271,16 +264,13 @@ import InkFlowCore
         do {
             activity = try Activity.request(attributes: LyricActivity(song: "InkFlow"),
                 content: ActivityContent(state: state, staleDate: state.staleDate),
-                pushType: state.source == .broadcast ? .token : nil)
-            if broadcastPrepared, let activity { observeBroadcast(activity) }
+                pushType: nil)
             diagnostics.record("island-start", ["source": preview ? "preview" : "capture"])
         } catch { status = error.localizedDescription; diagnostics.record("island-error", ["message": status]) }
     }
 
     private func retireIsland() async {
         previewBackgroundTask.end()
-        activityObservation?.cancel()
-        activityObservation = nil
         await publisher.cancel()
         // Include activities from an earlier app launch, not just the in-memory reference.
         var existing = Activity<LyricActivity>.activities
@@ -293,46 +283,33 @@ import InkFlowCore
     func endIsland() async {
         generation += 1
         broadcastPrepared = false
-        await broadcastRelay.stop()
+        localBroadcast.stop()
         await retireIsland()
     }
 
-    func importConnection(_ url: URL) {
-        let access = url.startAccessingSecurityScopedResource()
-        defer { if access { url.stopAccessingSecurityScopedResource() } }
-        do {
-            guard !broadcastPrepared && !connecting else {
-                throw RelayError.unavailable("请先停止当前连接，再更换配置。")
-            }
-            let data = try Data(contentsOf: url)
-            guard data.count < 8192 else { throw RelayError.unavailable("连接配置文件过大。") }
-            try JSONDecoder().decode(RelayConfiguration.self, from: data).save()
-            status = "连接配置已保存"
-        } catch { status = error.localizedDescription }
-    }
-
-    private func observeBroadcast(_ activity: Activity<LyricActivity>) {
-        activityObservation?.cancel()
-        activityObservation = Task { [weak self] in
-            for await update in activity.contentUpdates {
-                guard !Task.isCancelled, let self, broadcastPrepared else { return }
-                state = update.state
-                capturing = update.state.connectionActive == true
-                status = update.state.message ?? "系统音频连接"
-                if update.state.complete == true {
-                    capturing = false
-                    broadcastPrepared = false
-                    status = "音频连接已结束"
-                    await broadcastRelay.stop()
-                    return
-                }
-                let now = ProcessInfo.processInfo.systemUptime
-                if now - lastPublicationLog >= 5 {
-                    lastPublicationLog = now
-                    diagnostics.record("broadcast-update-received", ["position": String(update.state.position),
-                        "playing": String(update.state.playing), "status": status])
-                }
-            }
+    private func receivedLocal(_ snapshot: LocalBroadcastSnapshot) {
+        guard broadcastPrepared, let activity else { return }
+        guard activity.activityState == .active || activity.activityState == .stale else {
+            Task { await stopCapture(); status = "歌词实时活动已结束" }
+            return
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastPublicationLog >= 5 {
+            lastPublicationLog = now
+            diagnostics.record("local-audio-progress", ["seconds": String(snapshot.processedSeconds),
+                "revision": String(snapshot.state?.revision ?? -1), "message": snapshot.state?.message ?? ""])
+            try? diagnostics.export()
+        }
+        guard let content = snapshot.state else { return }
+        if content.complete == true {
+            Task { await stopCapture(); status = "音频连接已结束" }
+            return
+        }
+        capturing = content.connectionActive == true
+        status = content.message ?? "正在本机同步"
+        if state?.revision != content.revision || state?.relaySession != content.relaySession {
+            state = content
+            publish(content)
         }
     }
 
@@ -344,6 +321,7 @@ import InkFlowCore
             if broadcastPrepared, let activity {
                 state = activity.content.state
                 status = state?.message ?? "系统音频连接"
+                localBroadcast.receive()
             } else { refresh() }
         }
         do { _ = try diagnostics.export() }
@@ -463,8 +441,7 @@ import InkFlowCore
     func refresh() {
         tick?.cancel()
         if broadcastPrepared {
-            // One producer owns broadcast updates. Mixing local and APNs updates can race.
-            broadcastRelay.updateAppearance(appearance)
+            localBroadcast.updateAppearance(appearance)
             return
         }
         guard preview || trackID != nil else { return }

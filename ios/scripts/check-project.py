@@ -29,7 +29,8 @@ widget = plistlib.loads((root / "ios/LiveActivity/Info.plist").read_bytes())
 privacy = plistlib.loads((root / "ios/App/PrivacyInfo.xcprivacy").read_bytes())
 spec = yaml.safe_load((root / "ios/project.yml").read_text())
 workflow = yaml.safe_load((root / ".github/workflows/ios.yml").read_text())
-assert app["UIBackgroundModes"] == ["screen-capture"]
+assert app["UIBackgroundModes"] == ["screen-capture", "processing"]
+assert app["BGTaskSchedulerPermittedIdentifiers"] == ["com.inkflow.mobile.*"]
 assert app["NSSupportsLiveActivities"] is True
 assert widget["NSExtension"]["NSExtensionPointIdentifier"] == "com.apple.widgetkit-extension"
 assert privacy["NSPrivacyTracking"] is False

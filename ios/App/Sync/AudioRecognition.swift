@@ -13,11 +13,13 @@ final class AudioRecognition: NSObject, SHSessionDelegate {
     var onMatch: ((SongMatch) -> Void)?
     var onLevel: ((Double, Double) -> Void)?
     var onError: ((String) -> Void)?
+    var onProgress: ((Double) -> Void)?
     private var session: SHSession?
     private var converter: AVAudioConverter?
     private let output = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
     private var lastMeter = 0.0
     private var sampleTime: AVAudioFramePosition = 0
+    private var processedSeconds = 0.0
 
     func reset() {
         queue.async {
@@ -58,9 +60,11 @@ final class AudioRecognition: NSObject, SHSessionDelegate {
         var sum = 0.0
         for index in 0..<Int(buffer.frameLength) { sum += Double(samples[index] * samples[index]) }
         let now = ProcessInfo.processInfo.systemUptime
+        processedSeconds += Double(buffer.frameLength) / output.sampleRate
         if now - lastMeter >= 0.25 {
             lastMeter = now
             onLevel?(sqrt(sum / Double(buffer.frameLength)), now)
+            onProgress?(processedSeconds)
         }
         session.matchStreamingBuffer(buffer, at: AVAudioTime(sampleTime: sampleTime, atRate: output.sampleRate))
         sampleTime += AVAudioFramePosition(buffer.frameLength)
