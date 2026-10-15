@@ -186,7 +186,7 @@ import OSLog
             anchorDate: Date(), position: position, playing: clock.running, waiting: selection.waiting,
             repeated: document.lines.filter { $0.text == selection.line.text }.count > 1,
             revision: revision, source: .broadcast, playbackStart: dates.start, artwork: artwork,
-            message: document.precision == .word ? "逐字同步" : "逐行同步 · 填充为估计")
+            message: document.precision == .word ? "逐字同步" : "逐行同步 · 填充为估计", connectionActive: true)
         lastPublish = now
         lastLineID = selection.line.id
         lastPhraseID = phrase.id
@@ -199,6 +199,7 @@ import OSLog
         var state = LyricActivity.ContentState.waiting(appearance: activity.content.state.appearance)
         state.source = .broadcast
         state.message = message
+        state.connectionActive = started
         revision += 1
         state.revision = revision
         publisher.submit(state, to: activity)

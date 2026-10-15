@@ -40,7 +40,7 @@ final class PlaybackDatesTests: XCTestCase {
     }
 
     func testCompactEnglishPreservesWordsAndTiming() {
-        let line = LyricLine("Let the light stay with us", start: 0, end: 6)
+        let line = LyricLine("Let the light stay with us until the morning comes", start: 0, end: 9)
         let parts = CompactLyrics.phrases(line)
         XCTAssertGreaterThan(parts.count, 1)
         XCTAssertEqual(parts.map(\.text).joined(separator: " "), line.text)

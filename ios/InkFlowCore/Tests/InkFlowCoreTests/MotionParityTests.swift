@@ -41,4 +41,28 @@ final class MotionParityTests: XCTestCase {
         XCTAssertEqual(StageMotion.ambient(.cinema, at: 8).x, first.x)
         XCTAssertEqual(StageMotion.ambient(.cinema, at: 8, reduced: true).scale, 1)
     }
+
+    func testCinemaSwingsBothWaysWithoutSuddenJumps() {
+        let samples = (0...600).map { StageMotion.ambient(.cinema, at: Double($0) / 60) }
+        // The base lettering is tilted -2 degrees; the complete scene crosses zero.
+        XCTAssertLessThan(samples.map { $0.rotation - 2 }.min()!, -3)
+        XCTAssertGreaterThan(samples.map { $0.rotation - 2 }.max()!, 3)
+        for (a, b) in zip(samples, samples.dropFirst()) {
+            XCTAssertLessThan(abs(a.rotation - b.rotation), 0.1)
+            XCTAssertLessThan(abs(a.x - b.x), 0.11)
+        }
+    }
+
+    func testEveryStyleKeepsMovingButRespectsReducedMotion() {
+        for style in [LyricStyle.flow, .columns, .scatter, .collage, .cinema] {
+            let a = StageMotion.ambient(style, at: 20)
+            let b = StageMotion.ambient(style, at: 22)
+            XCTAssertNotEqual(a.y, b.y)
+            let still = StageMotion.ambient(style, at: 20, reduced: true)
+            XCTAssertEqual(still.x, 0)
+            XCTAssertEqual(still.y, 0)
+            XCTAssertEqual(still.rotation, 0)
+            XCTAssertEqual(still.scale, 1)
+        }
+    }
 }

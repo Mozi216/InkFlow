@@ -2,29 +2,59 @@ import SwiftUI
 import ReplayKit
 
 struct BroadcastConnectionView: View {
+    private let extensionID = BroadcastPicker.extensionID
+
     var body: some View {
         HStack(spacing: 14) {
-            BroadcastPicker().frame(width: 48, height: 48)
+            if let extensionID {
+                BroadcastPicker(extensionID: extensionID)
+                    .frame(width: 52, height: 52)
+                    .background(.white, in: Circle())
+                    .accessibilityLabel("打开系统音频连接面板")
+            } else {
+                Image(systemName: "exclamationmark.circle").font(.title2)
+                    .frame(width: 52, height: 52)
+            }
             VStack(alignment: .leading, spacing: 4) {
-                Text("开始系统音频连接").font(.subheadline.weight(.medium))
-                Text("点左侧按钮，在系统面板确认开始直播。麦克风保持关闭。")
+                Text(extensionID == nil ? "音频扩展未安装" : "打开系统音频连接面板").font(.subheadline.weight(.medium))
+                Text(extensionID == nil
+                     ? "请重新安装包含音频扩展的完整安装包。"
+                     : "点白色圆形按钮，选择 InkFlow 并确认「开始直播」，再切到网易云播放。麦克风保持关闭。")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 20))
     }
 }
 
 private struct BroadcastPicker: UIViewRepresentable {
-    func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
-        let picker = RPSystemBroadcastPickerView(frame: .zero)
-        // Read the embedded bundle ID, since personal signing may rewrite it.
+    let extensionID: String
+
+    static var extensionID: String? {
         if let folder = Bundle.main.builtInPlugInsURL,
            let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil),
            let url = files.first(where: { $0.lastPathComponent == "InkFlowBroadcast.appex" }) {
-            picker.preferredExtension = Bundle(url: url)?.bundleIdentifier
+            return Bundle(url: url)?.bundleIdentifier
         }
+        return nil
+    }
+
+    func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
+        // ReplayKit lays out its button at creation. A zero frame can leave it untappable.
+        let picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 52, height: 52))
+        picker.preferredExtension = extensionID
         picker.showsMicrophoneButton = false
+        picker.overrideUserInterfaceStyle = .light
+        picker.tintColor = .black
+        picker.backgroundColor = .clear
         return picker
     }
     func updateUIView(_ view: RPSystemBroadcastPickerView, context: Context) {}
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: RPSystemBroadcastPickerView,
+                     context: Context) -> CGSize? {
+        CGSize(width: 52, height: 52)
+    }
 }

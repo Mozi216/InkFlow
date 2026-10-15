@@ -112,6 +112,7 @@ import InkFlowCore
             preview = false
             tick?.cancel()
             state = existing.content.state
+            capturing = state?.connectionActive == true
             status = state?.message ?? "系统音频连接"
             observeBroadcast(existing)
         }
@@ -148,6 +149,11 @@ import InkFlowCore
         // 先在前台创建活动，切到网易云后只更新它，不在后台重新申请。
         await startIsland()
         capture.start()
+    }
+
+    func handleConnectionRequest() async {
+        guard ConnectionRequest.consume(), !broadcastPrepared, !capturing, !connecting else { return }
+        await beginCapture()
     }
 
     func stopCapture() async {
@@ -271,6 +277,7 @@ import InkFlowCore
             for await update in activity.contentUpdates {
                 guard !Task.isCancelled, let self, broadcastPrepared else { return }
                 state = update.state
+                capturing = update.state.connectionActive == true
                 status = update.state.message ?? "系统音频连接"
                 let now = ProcessInfo.processInfo.systemUptime
                 if now - lastPublicationLog >= 5 {
@@ -441,7 +448,7 @@ import InkFlowCore
             appearance: appearance, anchorDate: Date(), position: position, playing: clock.running,
             waiting: selection.waiting, repeated: document.lines.filter { $0.text == selection.line.text }.count > 1,
             revision: revision, source: preview ? .preview : .capture, complete: complete,
-            playbackStart: playbackDates.start, artwork: preview ? nil : artworkData)
+            playbackStart: playbackDates.start, artwork: preview ? nil : artworkData, connectionActive: !preview && capturing)
         state = content
         publish(content)
         guard clock.running else { return }

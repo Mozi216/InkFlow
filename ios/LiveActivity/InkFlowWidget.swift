@@ -16,11 +16,11 @@ struct InkFlowWidget: Widget {
                     IslandArtwork(state: context.state, stale: context.isStale)
                 }
             } compactLeading: {
-                CompactLyricArtwork(state: context.state, stale: context.isStale)
+                CompactLyricArtwork(state: context.state, stale: context.isStale, side: 0)
             } compactTrailing: {
-                SongArtwork(state: context.state).frame(width: 24, height: 24)
+                CompactLyricArtwork(state: context.state, stale: context.isStale, side: 1)
             } minimal: {
-                CompactLyricArtwork(state: context.state, stale: context.isStale, width: 42)
+                SongArtwork(state: context.state).frame(width: 24, height: 24)
             }
             .keylineTint(.white.opacity(0.35))
             .widgetURL(URL(string: "inkflow://lyrics"))

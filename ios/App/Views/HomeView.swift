@@ -29,9 +29,13 @@ struct HomeView: View {
                         }
                         .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
                         .disabled(session.connecting || session.captureUnavailableReason != nil)
-                        if session.broadcastPrepared { BroadcastConnectionView() }
+                        if session.broadcastPrepared && !session.capturing { BroadcastConnectionView() }
                         Text(session.captureUnavailableReason ?? "确认系统音频采集后，切到网易云播放。只识别歌曲，不保存画面或录音；首次匹配需要几秒。")
                             .font(.footnote).foregroundStyle(.secondary)
+                        DisclosureGroup("跟随网易云打开") {
+                            Text("在快捷指令中建立「网易云被打开时」自动化，添加 InkFlow 的「准备网易云歌词」操作。它会打开连接入口，仍需确认系统音频采集；连接期间换歌会自动识别。")
+                                .font(.footnote).foregroundStyle(.secondary).padding(.top, 8)
+                        }.font(.subheadline)
                     }
                     if !session.candidates.isEmpty {
                         VStack(spacing: 0) {

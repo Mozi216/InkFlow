@@ -108,10 +108,23 @@ public enum StageMotion {
         let drift = sin(seconds * 0.48), lift = sin(seconds * 0.61 + 0.8)
         var p = AmbientPose()
         switch style {
-        case .cinema: p.x = drift * 6; p.y = lift * 2; p.scale += sin(seconds * 0.37) * 0.009
-        case .columns: p.x = drift; p.y = lift * 3; p.rotation = drift * 0.15
-        case .collage: p.x = drift * 2; p.y = lift * 1.5; p.rotation = drift * 0.25
-        case .flow: p.y = lift * 1.6
+        case .cinema:
+            // Offset the lettering's base tilt, then swing through both directions.
+            let swing = sin(seconds * 0.82) + sin(seconds * 1.64) * 0.18
+            p.rotation = 2 + swing * 4.2
+            p.x = sin(seconds * 0.82 + 0.7) * 7
+            p.y = lift * 2
+            p.scale += sin(seconds * 0.41) * 0.014
+        case .columns:
+            p.x = drift * 1.5; p.y = lift * 4; p.rotation = drift * 0.35
+        case .collage:
+            p.x = drift * 3; p.y = lift * 1.5
+            p.rotation = (sin(seconds * 0.7) + sin(seconds * 1.4) * 0.15) * 0.8
+        case .scatter:
+            p.x = sin(seconds * 0.65) * 4; p.y = cos(seconds * 0.65) * 3
+            p.rotation = lift * 0.6; p.scale += sin(seconds * 0.45) * 0.012
+        case .flow:
+            p.y = lift * 1.8; p.scale += sin(seconds * 0.38) * 0.004
         default: p.x = drift * 3; p.y = lift * 2; p.rotation = drift * 0.18
         }
         p.depth = sin(seconds * 0.42)

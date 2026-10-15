@@ -23,6 +23,7 @@ struct LyricActivity: ActivityAttributes {
         var playbackStart: Date? = nil
         var artwork: Data? = nil
         var message: String? = nil
+        var connectionActive: Bool? = nil
 
         var staleDate: Date? {
             if source == .preview && !playing { return nil }

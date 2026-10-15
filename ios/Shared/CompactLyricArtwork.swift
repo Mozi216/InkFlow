@@ -25,24 +25,38 @@ struct SongArtwork: View {
 struct CompactLyricArtwork: View {
     let state: LyricActivity.ContentState
     let stale: Bool
-    var width: Double = 70
+    let side: Int
+    private let width = 72.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let phrase = CompactLyrics.phrase(state.line, at: state.position)
-        let words = StageLayout.tokens(phrase)
+        let phrase = state.complete == true && StageLayout.fallbackWidth(state.line.text) <= 12
+            ? state.line : CompactLyrics.phrase(state.line, at: state.position)
+        let column = CompactLyrics.columns(phrase)[side]
+        let baseFont = NativeTypesetting.font(size: 14, weight: 0.6, style: state.appearance.style)
+        let words = StageLayout.tokens(column) {
+            ($0 as NSString).size(withAttributes: [.font: baseFont]).width / 14
+        }
+        let space = (" " as NSString).size(withAttributes: [.font: baseFont]).width / 14
+        let units = words.enumerated().reduce(0.0) { total, pair in
+            total + pair.element.units + (pair.offset > 0 && pair.element.space ? space : 0)
+        }
+        let font = min(14, (width - 8) / max(1, units))
         let ink = LyricPalette.ink(state.appearance.theme)
+        let movement = state.playing && !reduceMotion ? state.position + 1.25 : state.position
         ZStack {
-            if stale || phrase.text.isEmpty {
+            if stale || state.line.text.isEmpty {
                 Image(systemName: stale ? "pause.circle" : "waveform").foregroundStyle(.secondary)
+            } else if column.text.isEmpty {
+                SongArtwork(state: state).frame(width: 22, height: 22)
             } else {
-                HStack(spacing: 2) {
+                HStack(spacing: 0) {
                     ForEach(Array(words.enumerated()), id: \.offset) { index, word in
-                        let font = min(14, width / max(1, words.reduce(0) { $0 + $1.units }) * 0.85)
+                        if index > 0 && word.space { Color.clear.frame(width: font * space, height: 1) }
                         let placed = PlacedToken(token: word, x: 0, y: 0, font: font,
                                                  width: word.units * font, row: 0, index: index)
                         let fill = fillProgress(at: state.position, start: word.start, end: word.end)
-                        let text = Text(word.text).font(.system(size: font, weight: .semibold))
+                        let text = Text(word.text).font(Font(baseFont.withSize(font)))
                             .fixedSize().contentTransition(.identity)
                         ZStack(alignment: .leading) {
                             text.foregroundStyle(ink.opacity(0.32))
@@ -55,10 +69,14 @@ struct CompactLyricArtwork: View {
                     }
                 }
                 .id(phrase.id)
-                .transition(.push(from: .bottom))
+                .offset(y: reduceMotion ? 0 : sin(movement * 0.7 + Double(side) * .pi) * 0.65)
+                .rotationEffect(.degrees(reduceMotion ? 0 : sin(movement * 0.55) * 0.65))
+                .animation(state.playing && !reduceMotion ? .linear(duration: 1.25) : nil, value: movement)
+                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 4)),
+                                        removal: .opacity.combined(with: .offset(y: -4))))
             }
         }
-        .frame(width: width, height: 25)
+        .frame(width: width, height: 27, alignment: .center)
         .clipped()
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: phrase.id)
         .accessibilityLabel(stale ? "歌词更新已中断" : phrase.text)

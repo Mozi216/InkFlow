@@ -14,7 +14,11 @@ struct LyricArtwork: View {
         let plan = NativeTypesetting.plan(state)
         let reduce = reducedMotion || dimmed
         let poses = StageMotion.poses(plan, at: time, waiting: state.waiting, reduced: reduce)
-        let ambient = StageMotion.ambient(plan.style, at: time, reduced: reduce)
+        // Give the compositor a destination beyond the next heartbeat. Timer masks
+        // still use the actual lyric clock; only the decorative motion looks ahead.
+        let moving = state.playing && !reduce
+        let motionTime = time + (systemTimedFill && moving ? 1.25 : 0)
+        let ambient = StageMotion.ambient(plan.style, at: motionTime, reduced: reduce)
         GeometryReader { geometry in
             let factor = min(geometry.size.width / plan.width, geometry.size.height / plan.height)
             ZStack {
@@ -28,7 +32,7 @@ struct LyricArtwork: View {
                             .opacity(systemTimedFill ? (state.waiting ? 0.7 : 1) : pose.opacity)
                             .blur(radius: pose.blur)
                             .position(x: pose.x, y: pose.y)
-                            .animation(systemTimedFill && !reduce ? .linear(duration: 0.95) : nil,
+                            .animation(systemTimedFill && moving ? .linear(duration: 1.25) : nil,
                                        value: state.revision)
                             .zIndex(pose.hero ? 4 : 2)
                     }
@@ -37,7 +41,7 @@ struct LyricArtwork: View {
                 .scaleEffect(ambient.scale)
                 .rotationEffect(.degrees(ambient.rotation))
                 .offset(x: ambient.x, y: ambient.y)
-                .animation(systemTimedFill && !reduce ? .linear(duration: 0.95) : nil,
+                .animation(systemTimedFill && moving ? .linear(duration: 1.25) : nil,
                            value: state.revision)
                 if state.appearance.rows == 2, plan.style != .columns, let next = state.next {
                     Text(next.text)
@@ -95,13 +99,13 @@ struct LyricArtwork: View {
                     .foregroundStyle(ink.opacity(layer == 0 ? 0.11 : 0.055))
                     .contentTransition(.identity)
                     .fixedSize().blur(radius: layer == 0 ? 0.6 : 1.2)
-                    .rotationEffect(.degrees(layer == 0 ? -4 : 2))
+                    .rotationEffect(.degrees(layer == 0 ? -4 + depth * 3 : 2 - depth * 4))
                     .scaleEffect(layer == 0 ? 1.04 + depth * 0.035 : 1)
                     .position(x: plan.width / 2 + depth * (layer == 0 ? -18 : 14), y: (top + bottom) / 2 + Double(layer + 1) * 8)
             }
             Rectangle().fill(ink.opacity(0.32))
                 .frame(width: min(140, right - left) * (0.7 + depth * 0.2), height: 1.5)
-                .rotationEffect(.degrees(-4)).position(x: left + 50, y: bottom + 2)
+                .rotationEffect(.degrees(-4 + depth * 5)).position(x: left + 50 + depth * 8, y: bottom + 2)
         } else if plan.style == .columns {
             Path { path in
                 path.move(to: CGPoint(x: left - 10, y: top + 30))
