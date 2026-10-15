@@ -82,7 +82,10 @@ final class AudioRecognition: NSObject, SHSessionDelegate {
     func session(_ session: SHSession, didNotFindMatchFor signature: SHSignature, error: Error?) {
         queue.async {
             guard session === self.session else { return }
-            if let error { self.onError?(error.localizedDescription) }
+            if let error {
+                let details = error as NSError
+                self.onError?("\(details.domain) / \(details.code): \(details.localizedDescription)")
+            }
         }
     }
 }

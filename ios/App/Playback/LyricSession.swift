@@ -90,9 +90,10 @@ import InkFlowCore
         localBroadcast.onEnded = { [weak self] message in
             guard let self else { return }
             Task { @MainActor in
-                await stopCapture()
-                status = message
-                diagnostics.record("local-session-ended", ["message": message])
+                await self.stopCapture()
+                self.status = message
+                self.diagnostics.record("local-session-ended", ["message": message])
+                _ = try? self.diagnostics.export()
             }
         }
         capture.onEnd = { [weak self] in
@@ -116,7 +117,7 @@ import InkFlowCore
         }
         refresh()
         diagnostics.record("local-connection-capability", ["sharedGroup": String(LocalBroadcastStore.folder != nil)])
-        try? diagnostics.export()
+        _ = try? diagnostics.export()
     }
 
     func beginCapture() async {
@@ -191,6 +192,7 @@ import InkFlowCore
             status = error.localizedDescription
             diagnostics.record("local-prepare-error", ["message": status])
         }
+        _ = try? diagnostics.export()
     }
 
     func startPreview() async {
@@ -254,7 +256,7 @@ import InkFlowCore
                 $0.activityState == .active || $0.activityState == .stale
             }
         }
-        if let activity {
+        if activity != nil {
             publish(state)
             return
         }
@@ -298,7 +300,7 @@ import InkFlowCore
             lastPublicationLog = now
             diagnostics.record("local-audio-progress", ["seconds": String(snapshot.processedSeconds),
                 "revision": String(snapshot.state?.revision ?? -1), "message": snapshot.state?.message ?? ""])
-            try? diagnostics.export()
+            _ = try? diagnostics.export()
         }
         guard let content = snapshot.state else { return }
         if content.complete == true {

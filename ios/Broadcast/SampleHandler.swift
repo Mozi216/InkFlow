@@ -8,7 +8,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private let logger = Logger(subsystem: "com.inkflow.mobile", category: "Broadcast")
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
+            guard let self else { return }
             let session = BroadcastLyrics(recognition: recognition)
             session.onFailure = { [weak self] message in
                 self?.logger.error("Connection failed: \(message, privacy: .public)")

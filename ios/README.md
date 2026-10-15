@@ -1,5 +1,15 @@
 # InkFlow iOS 原生验证工程
 
+## 构建 9：不经过推送服务的本机连接
+
+当前用户要求免费签名、无需自建服务器，并且必须支持耳机。构建 9 将 iOS 26 的连接改为 ReplayKit 系统音频 → 音乐识别与歌词查询 → App Group 原子快照和 Darwin 通知 → 主 App 更新实时活动。扩展不再访问 ActivityKit，主 App 不再请求 APNs 令牌。画面和麦克风数据直接丢弃，不保存录音。
+
+用户点连接后申请 `BGContinuedProcessingTask`，本次最多处理 30 分钟音频。进度来自实际处理的 PCM 样本数，系统可随时终止任务；手机会显示相应的后台任务界面。这里不是无限后台保活，也不能省略用户对系统采集的确认。歌曲识别和网易云歌词查询仍需互联网。
+
+iLoader 为重签后的主 App 和扩展分配同一 App Group。代码读取各自签名描述文件中实际授予的组名，而非假定未签名工程的固定名称。此前将免费安装一概视为缺少共享组的判断不准确。共享权限、系统音频输入、Shazam 匹配和持续后台更新必须分别真机验证；本节尚不代表这些环节已经通过。
+
+依据：[Apple 长任务文档](https://developer.apple.com/documentation/backgroundtasks/performing-long-running-tasks-on-ios-and-ipados)、[Apple DTS 对用户主动开始的持续处理会话的解释](https://developer.apple.com/forums/thread/840384)、[iLoader 签名实现](https://github.com/nab138/isideload/blob/main/isideload/src/sideload/sideloader.rs)。旧 APNs 服务代码保留作历史候选，不是当前连接的前置要求。
+
 ## 构建 8：重做 iOS 26 音频扩展连接
 
 用户确认 pre7 的显示验收仍未通过，优先修复「系统音频扩展未能访问歌词实时活动」。旧方案在三次真机日志中均返回零个活动，在识别开始前退出；本次删除广播扩展直接调用 ActivityKit 的路径，改为共享会话 + 私有 HTTPS 服务 + APNs 更新。
