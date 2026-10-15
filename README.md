@@ -4,6 +4,8 @@ iOS 原生歌词效果验证工程。App 和实时活动扩展共用 SwiftUI 文
 
 当前不是经过真机验收的成品。持续展开灵动岛、跨 App 同步和岛内动画流畅度仍需验证；App 内效果预览不能代替灵动岛实测。
 
+[Xcode 27 云端验证已通过](https://github.com/Mozi216/InkFlow/actions/runs/38789097264)：10 项核心测试（包含 72 组 Windows 运动参考场景）、App 与灵动岛扩展的模拟器和设备编译，以及六种原生预览截图。对应代码提交为 `1c15515`。
+
 - [工程说明与验证清单](ios/README.md)
 - [云端构建](https://github.com/Mozi216/InkFlow/actions)
 
