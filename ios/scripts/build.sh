@@ -17,10 +17,10 @@ swift test --package-path InkFlowCore 2>&1 | tee build/core-tests.log
 xcodegen generate --spec project.yml
 xcodebuild -project InkFlow.xcodeproj -scheme InkFlow -configuration Debug \
   -destination 'generic/platform=iOS Simulator' -derivedDataPath build/DerivedData \
-  CODE_SIGNING_ALLOWED=NO build | tee build/simulator-build.log
+  CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build/simulator-build.log
 xcodebuild -project InkFlow.xcodeproj -scheme InkFlow -configuration Release \
   -destination 'generic/platform=iOS' -derivedDataPath build/Device \
-  CODE_SIGNING_ALLOWED=NO build | tee build/device-build.log
+  CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build/device-build.log
 mkdir -p build/unsigned/Payload
 ditto build/Device/Build/Products/Release-iphoneos/InkFlow.app build/unsigned/Payload/InkFlow.app
 cd build/unsigned

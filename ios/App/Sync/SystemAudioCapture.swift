@@ -1,6 +1,17 @@
+import Foundation
+
+#if targetEnvironment(simulator)
+// iOS 模拟器 SDK 没有 ScreenCaptureKit。效果预览可运行，采集必须用真机验证。
+@MainActor final class SystemAudioCapture {
+    let recognition = AudioRecognition()
+    var onState: (@MainActor (String, Bool) -> Void)?
+
+    func start() { onState?("系统音频采集需要 iPhone 真机", false) }
+    func stop() async { onState?("未连接", false) }
+}
+#else
 import ScreenCaptureKit
 import CoreMedia
-import Foundation
 
 final class SystemAudioCapture: NSObject, SCContentSharingPickerObserver, SCStreamOutput, SCStreamDelegate {
     let recognition = AudioRecognition()
@@ -89,3 +100,4 @@ final class SystemAudioCapture: NSObject, SCContentSharingPickerObserver, SCStre
         }
     }
 }
+#endif
