@@ -30,6 +30,14 @@ public struct PlaybackClock: Sendable {
         running = false
     }
 
+    @discardableResult
+    public mutating func resume(at uptime: Double) -> Bool {
+        guard uptime.isFinite, !running, !hasFinished(at: uptime) else { return false }
+        // Continue from the last confirmed pause point. The next match can correct a seek.
+        align(position: position, at: uptime, running: true)
+        return true
+    }
+
     public mutating func followAudio(position: Double, observedAt: Double, lastSound: Double, now: Double) {
         let audible = now - lastSound < 1.5
         // A late recognition result must not restart the clock after audio has stopped.

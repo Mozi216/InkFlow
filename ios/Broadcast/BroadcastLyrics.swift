@@ -25,6 +25,7 @@ import OSLog
     private var lastPhraseID: String?
     private var lastWaiting = false
     private var started = false
+    private var paused = false
 
     init(recognition: AudioRecognition) { self.recognition = recognition }
 
@@ -67,6 +68,7 @@ import OSLog
     }
 
     func pause() {
+        paused = true
         recognition.stop()
         silence?.cancel()
         clock.stop(at: ProcessInfo.processInfo.systemUptime)
@@ -74,6 +76,7 @@ import OSLog
     }
 
     func resume() {
+        paused = false
         recognition.reset()
         armSilenceDeadline()
         if document == nil { showMessage("等待重新识别音乐") }
@@ -115,9 +118,16 @@ import OSLog
     }
 
     private func received(level: Double, at uptime: Double) {
-        guard started else { return }
-        if level > 0.00001 { lastSound = uptime }
+        guard started, !paused else { return }
+        if level > 0.00001 {
+            lastSound = uptime
+            if document != nil, clock.resume(at: uptime) {
+                logger.info("Audio resumed; lyric clock continues at \(self.clock.position) s, awaiting calibration")
+                refresh(force: true)
+            }
+        }
         if clock.running && uptime - lastSound > 1.5 {
+            logger.info("Freeze lyric clock: silent audio for \(uptime - self.lastSound) s")
             clock.stop(at: lastSound)
             refresh(force: true)
         } else { refresh() }
@@ -128,14 +138,18 @@ import OSLog
         silence?.cancel()
         silence = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(2)) } catch { return }
-            guard let self, started else { return }
-            if clock.running { clock.stop(at: lastSound); refresh(force: true) }
+            guard let self, started, !paused else { return }
+            if clock.running {
+                logger.info("Freeze lyric clock: no audio callbacks for 2 s")
+                clock.stop(at: lastSound)
+                refresh(force: true)
+            }
             else if document == nil { showMessage("等待音乐音频；请在网易云播放") }
         }
     }
 
     private func matched(_ observation: SongMatch) {
-        guard started else { return }
+        guard started, !paused else { return }
         let key = String(observation.song.id)
         if key == songKey {
             if document != nil {
@@ -161,6 +175,7 @@ import OSLog
                 clock.duration = song.duration
                 clock.followAudio(position: observation.position, observedAt: observation.uptime,
                                   lastSound: lastSound, now: ProcessInfo.processInfo.systemUptime)
+                if paused { clock.stop(at: lastSound) }
                 if lyrics.lines.isEmpty { showMessage("这首歌暂时没有歌词") }
                 else { refresh(force: true) }
                 let image = await catalog.artwork(for: song)

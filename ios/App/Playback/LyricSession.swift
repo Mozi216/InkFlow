@@ -421,8 +421,16 @@ import InkFlowCore
     private func received(level: Double, uptime: Double) {
         guard capturing, !preview else { return }
         self.level = level
-        if level > 0.00001 { lastSound = uptime }
-        // 音频中断并不能证明网易云暂停。失去声音后先冻结，等指纹重新确认位置。
+        if level > 0.00001 {
+            lastSound = uptime
+            quiet = false
+            if trackID != nil, clock.resume(at: uptime) {
+                status = "音频已恢复，正在校准位置"
+                diagnostics.record("clock-audio-resumed", ["position": String(clock.position)])
+                refresh()
+            }
+        }
+        // Silence can be a pause or part of the song. Resume on sound, then recalibrate.
         if uptime - lastSound > 1.2, !quiet {
             quiet = true
             clock.stop(at: lastSound)

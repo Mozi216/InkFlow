@@ -2,6 +2,31 @@ import XCTest
 @testable import InkFlowCore
 
 final class PlaybackDatesTests: XCTestCase {
+    func testAudioResumeDoesNotWaitForAnotherRecognition() {
+        var clock = PlaybackClock()
+        clock.duration = 200
+        clock.align(position: 30, at: 100, running: true)
+        clock.stop(at: 102)
+        XCTAssertEqual(clock.value(at: 110), 32)
+        XCTAssertTrue(clock.resume(at: 110))
+        XCTAssertEqual(clock.value(at: 111), 33)
+        // Repeated audio callbacks must not reset the timer origin.
+        XCTAssertFalse(clock.resume(at: 111))
+        XCTAssertEqual(clock.anchor, 110)
+        // A delayed match can still correct a seek made during the interruption.
+        clock.followAudio(position: 80, observedAt: 110, lastSound: 116, now: 116)
+        XCTAssertEqual(clock.value(at: 116), 86)
+    }
+
+    func testFinishedSongDoesNotRestartWhenMoreAudioArrives() {
+        var clock = PlaybackClock()
+        clock.duration = 40
+        clock.align(position: 38, at: 100, running: true)
+        clock.stop(at: 104)
+        XCTAssertFalse(clock.resume(at: 110))
+        XCTAssertEqual(clock.value(at: 120), 40)
+    }
+
     func testRepeatedAudioObservationsKeepTimerOriginStable() {
         var clock = PlaybackClock()
         clock.align(position: 30, at: 100, running: true)

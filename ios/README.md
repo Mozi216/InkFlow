@@ -8,7 +8,11 @@
 
 频繁校时的微小误差会重建系统填充计时区间；现忽略 180 毫秒内的识别抖动，真实跳转仍校正。新增计时回归测试和播放状态日志。计算耗时、计时器重建、WidgetKit 显示调度是不同环节，尚未证明它们解释了所有停顿。
 
+另外修正了音频恢复后仍等待识曲的逻辑：旧版遇到静音或缺失回调会冻结时钟，声音恢复却只能靠下一轮匹配重新启动，额外等待一个采样与识别周期。现在有已识别歌曲时，声音恢复即继续已有时钟，再由匹配结果校准；重复音频回调不改变计时起点，歌曲结尾也不会被重新启动。真实暂停、曲内静音和换歌仍不能只凭音量完全区分，不能把临时继续计时描述成已得到网易云的播放状态。
+
 此次排查期间 USB 设备连接中断，后续修改尚未安装实测。不能宣称已经实现完全自动监听网易云、免系统采集确认或持续高帧灵动岛。当前 Apple 接口只允许当前 App 发布自己的 Now Playing 信息；快捷指令 App 打开触发能调起入口，但不会授予另一个 App 的音频访问。
+
+已核查的无采集方案：Apple 的 Shazam 应用能够识别耳机里的音乐，快捷指令也能调用识曲；但尚未找到能交给 InkFlow 的连续播放进度、暂停和切歌事件，不能据此实现自动同步。网易云公开社区接口的 `relay_play_state_submit` 是上报状态，`listentogether_status` 属于一起听会话，均不是普通手机播放的全局查询入口。未添加假自动开关，也未把最近听歌记录当成实时进度。依据：[Now Playing](https://developer.apple.com/documentation/mediaplayer/mpnowplayinginfocenter)、[耳机识曲](https://support.apple.com/guide/shazam/dev57c8c9468/web)、[快捷指令识曲](https://support.apple.com/guide/shazam/deve5143aaf5/web)、[iOS 系统采集](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-on-ios)。
 
 ## 构建 10：直接使用网易云音频指纹
 
