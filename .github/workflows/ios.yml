@@ -26,10 +26,6 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install project generator
         run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
-      - name: Start preview simulator
-        if: ${{ !inputs.device_only }}
-        continue-on-error: true
-        run: python3 ios/scripts/capture-simulator.py --boot-only
       - name: Test core and compile both iOS targets
         env:
           INKFLOW_DEVICE_ONLY: ${{ inputs.device_only }}

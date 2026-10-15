@@ -31,4 +31,5 @@ mkdir -p build/unsigned/Payload
 ditto build/Device/Build/Products/Release-iphoneos/InkFlow.app build/unsigned/Payload/InkFlow.app
 cd build/unsigned
 ditto -c -k --keepParent Payload InkFlow-unsigned.ipa
+python3 ../../scripts/check-package.py InkFlow-unsigned.ipa | tee ../package-check.log
 echo 'InkFlow-unsigned.ipa is NOT installable until signed for the destination device.'
