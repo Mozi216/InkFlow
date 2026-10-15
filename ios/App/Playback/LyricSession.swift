@@ -12,6 +12,7 @@ import InkFlowCore
     @Published private(set) var title = "InkFlow"
     @Published private(set) var status = "效果预览"
     @Published private(set) var capturing = false
+    @Published private(set) var connecting = false
     @Published private(set) var preview = true
     @Published private(set) var state: LyricActivity.ContentState?
     @Published private(set) var candidates: [NetEaseSong] = []
@@ -56,9 +57,20 @@ import InkFlowCore
         capture.onState = { [weak self] message, active in
             guard let self else { return }
             capturing = active
+            if active { connecting = false }
             status = message
             diagnostics.record("capture", ["active": String(active), "message": message])
             if !active && !preview { clock.stop(at: ProcessInfo.processInfo.systemUptime); refresh() }
+        }
+        capture.onEnd = { [weak self] in
+            guard let self else { return }
+            connecting = false
+            generation += 1
+            resolveTask?.cancel()
+            audioDeadline?.cancel()
+            tick?.cancel()
+            candidates = []
+            await endIsland()
         }
         capture.recognition.onMatch = { [weak self] match in
             Task { @MainActor in self?.received(match) }
@@ -73,6 +85,8 @@ import InkFlowCore
     }
 
     func beginCapture() async {
+        guard !capturing, !connecting else { return }
+        connecting = true
         generation += 1
         resolveTask?.cancel()
         tick?.cancel()
@@ -93,12 +107,7 @@ import InkFlowCore
     }
 
     func stopCapture() async {
-        generation += 1
-        resolveTask?.cancel()
-        audioDeadline?.cancel()
-        tick?.cancel()
         await capture.stop()
-        await endIsland()
     }
 
     func startPreview() async {

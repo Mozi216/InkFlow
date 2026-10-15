@@ -5,9 +5,13 @@ import Foundation
 @MainActor final class SystemAudioCapture {
     let recognition = AudioRecognition()
     var onState: (@MainActor (String, Bool) -> Void)?
+    var onEnd: (@MainActor () async -> Void)?
 
-    func start() { onState?("系统音频采集需要 iPhone 真机", false) }
-    func stop() async { onState?("未连接", false) }
+    func start() {
+        onState?("系统音频采集需要 iPhone 真机", false)
+        Task { await onEnd?() }
+    }
+    func stop() async { onState?("未连接", false); await onEnd?() }
 }
 #else
 import ScreenCaptureKit
@@ -16,6 +20,7 @@ import CoreMedia
 final class SystemAudioCapture: NSObject, SCContentSharingPickerObserver, SCStreamOutput, SCStreamDelegate {
     let recognition = AudioRecognition()
     var onState: (@MainActor (String, Bool) -> Void)?
+    var onEnd: (@MainActor () async -> Void)?
     @MainActor private var activeStream: SCStream?
     @MainActor private var generation = 0
     @MainActor private var choosing = false
@@ -45,6 +50,7 @@ final class SystemAudioCapture: NSObject, SCContentSharingPickerObserver, SCStre
         SCContentSharingPicker.shared.isActive = false
         try? await stream?.stopCapture()
         onState?("未连接", false)
+        await onEnd?()
     }
 
     @MainActor private func begin(_ filter: SCContentFilter) async {
@@ -59,7 +65,6 @@ final class SystemAudioCapture: NSObject, SCContentSharingPickerObserver, SCStre
         // 保留系统要求的视频输出，只接收低分辨率画面并立即丢弃。
         config.width = 32
         config.height = 32
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         do {
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: recognition.queue)
@@ -74,6 +79,7 @@ final class SystemAudioCapture: NSObject, SCContentSharingPickerObserver, SCStre
             SCContentSharingPicker.shared.remove(self)
             SCContentSharingPicker.shared.isActive = false
             onState?(error.localizedDescription, false)
+            await onEnd?()
         }
     }
 

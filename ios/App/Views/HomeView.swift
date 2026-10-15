@@ -28,6 +28,7 @@ struct HomeView: View {
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                         }
                         .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
+                        .disabled(session.connecting)
                         Text("选择整个屏幕以识别播放音频。画面立即丢弃，不保存录音。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
