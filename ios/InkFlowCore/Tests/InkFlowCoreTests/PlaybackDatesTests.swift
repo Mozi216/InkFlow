@@ -2,6 +2,16 @@ import XCTest
 @testable import InkFlowCore
 
 final class PlaybackDatesTests: XCTestCase {
+    func testRepeatedAudioObservationsKeepTimerOriginStable() {
+        var clock = PlaybackClock()
+        clock.align(position: 30, at: 100, running: true)
+        clock.followAudio(position: 34.05, observedAt: 104, lastSound: 110, now: 110)
+        XCTAssertEqual(clock.anchor, 100)
+        XCTAssertEqual(clock.value(at: 110), 40)
+        clock.followAudio(position: 80, observedAt: 110, lastSound: 116, now: 116)
+        XCTAssertEqual(clock.value(at: 116), 86)
+    }
+
     func testRecognitionArrivingAfterPauseDoesNotRestartPlayback() {
         var clock = PlaybackClock()
         clock.followAudio(position: 30, observedAt: 100, lastSound: 98, now: 101)

@@ -30,7 +30,7 @@ struct HomeView: View {
                         .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
                         .disabled(session.connecting || session.captureUnavailableReason != nil)
                         if session.broadcastPrepared && !session.capturing { BroadcastConnectionView() }
-                        Text(session.captureUnavailableReason ?? "确认系统音频采集后，切到网易云播放。声音在本机计算指纹，仅把指纹发送给网易云识曲；不上传画面或原始录音。首次匹配约需 12–16 秒。")
+                        Text(session.captureUnavailableReason ?? "确认系统音频采集后，切到网易云播放。声音在本机计算指纹，仅把指纹发送给网易云识曲；不上传画面或原始录音。先采样 6 秒，未匹配时自动延长。")
                             .font(.footnote).foregroundStyle(.secondary)
                         if session.usesBroadcast {
                             Text("本机同步每次最多分析 30 分钟系统音频，支持耳机。系统会显示后台任务，可随时停止；无需配置推送服务。歌曲识别及歌词查询仍需联网。")

@@ -1,5 +1,5 @@
 import Foundation
-import JavaScriptCore
+import NativeFingerprint
 import OSLog
 
 struct SongMatch {
@@ -25,7 +25,6 @@ private enum AudioMatchError: LocalizedError {
 // The bundled algorithm runs offline. Only its fingerprint goes to NetEase.
 final class NetEaseFingerprint {
     private let queue = DispatchQueue(label: "InkFlow.fingerprint", qos: .userInitiated)
-    private var context: JSContext?
 
     func calculate(_ pcm: Data) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
@@ -39,25 +38,20 @@ final class NetEaseFingerprint {
     }
 
     private func calculateOnQueue(_ pcm: Data) throws -> String {
-        if context == nil {
-            guard let url = Bundle.main.url(forResource: "fingerprint-runtime", withExtension: "js"),
-                  let created = JSContext() else { throw AudioMatchError.runtime("缺少算法资源") }
-            created.evaluateScript(try String(contentsOf: url, encoding: .utf8))
-            if let error = created.exception { throw AudioMatchError.runtime(error.toString() ?? "初始化失败") }
-            context = created
+        guard pcm.count % MemoryLayout<Float>.size == 0 else { throw AudioMatchError.runtime("音频格式无效") }
+        var bytes = [UInt8](repeating: 0, count: 65_536)
+        var length = 0
+        let code = pcm.withUnsafeBytes { input in
+            bytes.withUnsafeMutableBufferPointer { output in
+                inkflow_fingerprint(input.bindMemory(to: Float.self).baseAddress,
+                    input.count / MemoryLayout<Float>.size, output.baseAddress, output.count, &length)
+            }
         }
-        guard let context else { throw AudioMatchError.runtime("初始化失败") }
-        context.exception = nil
-        let value = context.objectForKeyedSubscript("inkflowFingerprint")?.call(withArguments: [pcm.base64EncodedString()])
-        if let error = context.exception {
-            self.context = nil
-            throw AudioMatchError.runtime(error.toString() ?? "计算失败")
+        if code == 1 { return "" }
+        guard code == 0, length > 0, length <= bytes.count else {
+            throw AudioMatchError.runtime("错误码 \(code)")
         }
-        if value?.toString() == "" { return "" }
-        guard let result = value?.toString(), result.count > 32, result.count < 100_000 else {
-            throw AudioMatchError.runtime("空指纹")
-        }
-        return result
+        return Data(bytes.prefix(length)).base64EncodedString()
     }
 }
 
@@ -83,7 +77,8 @@ actor NetEaseAudioMatcher {
         if raw.isEmpty { return nil }
         let calculated = ProcessInfo.processInfo.systemUptime
         var body = URLComponents()
-        body.queryItems = ["sessionId": sessionID, "algorithmCode": "shazam_v2", "duration": "12",
+        let duration = pcm.count / (8_000 * MemoryLayout<Float>.size)
+        body.queryItems = ["sessionId": sessionID, "algorithmCode": "shazam_v2", "duration": String(duration),
                            "rawdata": raw, "times": "1", "decrypt": "1"].sorted { $0.key < $1.key }
             .map { URLQueryItem(name: $0.key, value: $0.value) }
         var request = URLRequest(url: URL(string: "https://interface.music.163.com/api/music/audio/match")!)
@@ -104,19 +99,18 @@ actor NetEaseAudioMatcher {
         try Task.checkCancellation()
         let decoded = try JSONDecoder().decode(MatchResponse.self, from: data)
         guard decoded.code == 200 else { throw AudioMatchError.service(decoded.code) }
-        let candidates = decoded.data?.result ?? []
+        let candidates = (decoded.data?.result ?? []).filter {
+            $0.startTime >= 0 && $0.startTime.isFinite && $0.song.duration > $0.startTime
+        }
         guard let found = candidates.first(where: { $0.song.id == preferredID }) ?? candidates.first else {
             logger.info("No match; fingerprint \(calculated - began) s; reason \(decoded.data?.noMatchReason ?? -1)")
             return nil
-        }
-        guard found.startTime >= 0, found.startTime.isFinite, found.song.duration > found.startTime else {
-            throw AudioMatchError.response
         }
         preferredID = found.song.id
         let song = NetEaseSong(id: found.song.id, title: found.song.name,
             artist: found.song.artists.map(\.name).joined(separator: " / "), duration: found.song.duration / 1000,
             artworkURL: (found.song.album?.picUrl).flatMap(URL.init(string:)))
-        logger.info("Matched \(song.title, privacy: .public); offset \(found.startTime / 1000); fingerprint \(calculated - began) s; request \(ProcessInfo.processInfo.systemUptime - calculated) s")
+        logger.info("Matched \(song.title, privacy: .public) / \(song.artist, privacy: .public); id \(song.id); offset \(found.startTime / 1000); fingerprint \(calculated - began) s; request \(ProcessInfo.processInfo.systemUptime - calculated) s")
         return SongMatch(song: song, position: found.startTime / 1000, uptime: startUptime)
     }
 

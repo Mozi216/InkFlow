@@ -115,6 +115,12 @@ import InkFlowCore
         capture.recognition.onError = { [weak self] error in
             Task { @MainActor in self?.diagnostics.record("recognition-error", ["message": error]) }
         }
+        capture.recognition.onStatus = { [weak self] message in
+            Task { @MainActor in
+                guard let self, self.capturing, self.trackID == nil else { return }
+                self.status = message
+            }
+        }
         refresh()
         diagnostics.record("local-connection-capability", ["sharedGroup": String(LocalBroadcastStore.folder != nil)])
         _ = try? diagnostics.export()
@@ -306,7 +312,8 @@ import InkFlowCore
         if now - lastPublicationLog >= 5 {
             lastPublicationLog = now
             diagnostics.record("local-audio-progress", ["seconds": String(snapshot.processedSeconds),
-                "revision": String(snapshot.state?.revision ?? -1), "message": snapshot.state?.message ?? ""])
+                "revision": String(snapshot.state?.revision ?? -1), "message": snapshot.state?.message ?? "",
+                "playing": String(snapshot.state?.playing ?? false), "position": String(snapshot.state?.position ?? 0)])
             _ = try? diagnostics.export()
         }
         guard let content = snapshot.state else { return }

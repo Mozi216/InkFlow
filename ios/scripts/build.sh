@@ -14,6 +14,7 @@ if [[ "${sdk%%.*}" -lt 27 ]]; then
   exit 1
 fi
 swift test --package-path InkFlowCore 2>&1 | tee build/core-tests.log
+swift test --package-path Vendor/NetEaseFingerprint 2>&1 | tee build/native-fingerprint-tests.log
 node scripts/test-fingerprint.cjs 2>&1 | tee build/fingerprint-tests.log
 node --test relay/server.test.mjs 2>&1 | tee build/relay-tests.log
 python3 scripts/test-signing.py 2>&1 | tee build/signing-tests.log

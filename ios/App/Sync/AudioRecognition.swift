@@ -1,4 +1,5 @@
 import AVFoundation
+import OSLog
 
 final class AudioRecognition {
     let queue = DispatchQueue(label: "InkFlow.audio", qos: .userInitiated)
@@ -6,12 +7,16 @@ final class AudioRecognition {
     var onLevel: ((Double, Double) -> Void)?
     var onError: ((String) -> Void)?
     var onProgress: ((Double) -> Void)?
+    var onStatus: ((String) -> Void)?
+    private let logger = Logger(subsystem: "com.inkflow.mobile", category: "AudioInput")
     private let matcher = NetEaseAudioMatcher()
     private var request: Task<Void, Never>?
     private var converter: AVAudioConverter?
     private let output = AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1)!
     private var audio: [Float] = []
     private let windowFrames = 96_000
+    private var windowSeconds = 6
+    private var lastStatus = ""
     private var nextAttempt = 0.0
     private var lastMeter = 0.0
     private var lastSound = 0.0
@@ -43,6 +48,13 @@ final class AudioRecognition {
         request = nil
         audio.removeAll(keepingCapacity: true)
         nextAttempt = 0
+        windowSeconds = 6
+    }
+
+    private func report(_ message: String) {
+        guard message != lastStatus else { return }
+        lastStatus = message
+        onStatus?(message)
     }
 
     // Both capture drivers call this on queue. Only an in-memory audio window is kept.
@@ -83,20 +95,31 @@ final class AudioRecognition {
             onLevel?(level, now)
             onProgress?(processedSeconds)
         }
-        if now - lastBuffer > 0.6 { clearWindow() }
+        if lastBuffer > 0, now - lastBuffer > 0.6 {
+            logger.info("Audio gap \(now - self.lastBuffer) s; discard incomplete window")
+            clearWindow()
+        }
         lastBuffer = now
         if level > 0.00001 { lastSound = now }
         if now - lastSound > 1.5 {
             if !audio.isEmpty || request != nil { clearWindow() }
+            report("音频通道已连接，目前收到的是静音")
             return
         }
         audio.append(contentsOf: UnsafeBufferPointer(start: samples, count: count))
         if audio.count > windowFrames { audio.removeFirst(audio.count - windowFrames) }
-        guard audio.count == windowFrames, request == nil, now >= nextAttempt else { return }
-        let pcm = audio.withUnsafeBytes { Data($0) }
-        let startUptime = now - 12
+        let neededFrames = windowSeconds * 8_000
+        if audio.count < neededFrames {
+            report("已收到声音，正在采样 \(audio.count / 8_000)/\(windowSeconds) 秒")
+            return
+        }
+        guard request == nil, now >= nextAttempt else { return }
+        let window = Array(audio.suffix(neededFrames))
+        let pcm = window.withUnsafeBytes { Data($0) }
+        let startUptime = now - Double(windowSeconds)
         let expectedGeneration = generation
         nextAttempt = now + 4
+        report("已收到声音，正在匹配歌曲")
         request = Task { [weak self, matcher] in
             do {
                 let match = try await matcher.match(pcm: pcm, startUptime: startUptime)
@@ -104,7 +127,14 @@ final class AudioRecognition {
                 self?.queue.async { [weak self] in
                     guard let self, self.active, self.generation == expectedGeneration else { return }
                     self.request = nil
-                    if let match { self.onMatch?(match) }
+                    if let match {
+                        self.windowSeconds = 6
+                        self.report("已识别：" + match.title)
+                        self.onMatch?(match)
+                    } else {
+                        self.windowSeconds = min(12, self.windowSeconds + 3)
+                        self.report("已收到声音，尚未匹配到歌曲，继续识别")
+                    }
                 }
             } catch {
                 let cancelled = Task.isCancelled

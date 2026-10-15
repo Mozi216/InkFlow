@@ -18,7 +18,7 @@ def check(ipa):
     parent = app_path.removesuffix("Info.plist")
     app_id = app["CFBundleIdentifier"]
     version = app["CFBundleVersion"]
-    if int(version) >= 10:
+    if int(version) == 10:
         for folder in (parent, parent + "PlugIns/InkFlowBroadcast.appex/"):
             assert folder + "fingerprint-runtime.js" in names, "Missing fingerprint runtime"
     assert app.get("NSSupportsLiveActivities") is True

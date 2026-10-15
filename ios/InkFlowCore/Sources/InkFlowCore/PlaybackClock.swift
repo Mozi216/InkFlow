@@ -34,6 +34,9 @@ public struct PlaybackClock: Sendable {
         let audible = now - lastSound < 1.5
         // A late recognition result must not restart the clock after audio has stopped.
         let heardPosition = audible ? position : max(0, position + lastSound - observedAt)
+        let heardNow = audible ? heardPosition + max(0, now - observedAt) : heardPosition
+        // Recognition jitter must not rebuild every system timer mask.
+        if running == audible && abs(heardNow - value(at: now)) < 0.18 { return }
         align(position: heardPosition, at: audible ? observedAt : now, running: audible)
     }
 }

@@ -49,6 +49,12 @@ import OSLog
         recognition.onLevel = { [weak self] level, uptime in
             Task { @MainActor in self?.received(level: level, at: uptime) }
         }
+        recognition.onStatus = { [weak self] message in
+            Task { @MainActor in
+                guard let self, self.started, self.document == nil else { return }
+                self.showMessage(message)
+            }
+        }
         recognition.onError = { [weak self] message in
             Task { @MainActor in
                 self?.logger.error("Recognition: \(message, privacy: .public)")
