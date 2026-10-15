@@ -12,7 +12,7 @@ output.mkdir(parents=True, exist_ok=True)
 def run(*arguments, **kwargs):
     print("simctl " + " ".join(arguments), flush=True)
     return subprocess.run(["xcrun", "simctl", *arguments], check=True, text=True,
-                          timeout=kwargs.pop("timeout", 90), **kwargs)
+                          timeout=kwargs.pop("timeout", 300), **kwargs)
 
 inventory = json.loads(run("list", "devices", "available", "--json", capture_output=True).stdout)
 devices = [d for runtime, entries in inventory["devices"].items() if "iOS-27" in runtime

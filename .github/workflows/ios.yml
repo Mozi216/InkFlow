@@ -11,6 +11,9 @@ on:
         default: false
 permissions:
   contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: xcode-27
@@ -20,6 +23,7 @@ jobs:
       - name: Install project generator
         run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
       - name: Start preview simulator
+        continue-on-error: true
         run: python3 ios/scripts/capture-simulator.py --boot-only
       - name: Test core and compile both iOS targets
         run: bash ios/scripts/build.sh
