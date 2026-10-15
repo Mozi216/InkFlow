@@ -1,9 +1,11 @@
 import SwiftUI
 import InkFlowCore
+import UniformTypeIdentifiers
 
 struct HomeView: View {
     @ObservedObject var session: LyricSession
     @State private var showingDiagnostics = false
+    @State private var importingConnection = false
 
     var body: some View {
         NavigationStack {
@@ -32,6 +34,12 @@ struct HomeView: View {
                         if session.broadcastPrepared && !session.capturing { BroadcastConnectionView() }
                         Text(session.captureUnavailableReason ?? "确认系统音频采集后，切到网易云播放。只识别歌曲，不保存画面或录音；首次匹配需要几秒。")
                             .font(.footnote).foregroundStyle(.secondary)
+                        if session.usesBroadcast {
+                            Button("导入推送连接配置") { importingConnection = true }
+                                .font(.subheadline)
+                            Text("iOS 26 通过推送服务更新灵动岛；服务会接收当前歌词、时间轴及样式，不接收画面或原始音频。")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
                         DisclosureGroup("跟随网易云打开") {
                             Text("在快捷指令中建立「网易云被打开时」自动化，添加 InkFlow 的「准备网易云歌词」操作。它会打开连接入口，仍需确认系统音频采集；连接期间换歌会自动识别。")
                                 .font(.footnote).foregroundStyle(.secondary).padding(.top, 8)
@@ -81,6 +89,9 @@ struct HomeView: View {
                 }
             }
             .sheet(isPresented: $showingDiagnostics) { DiagnosticsView(session: session) }
+            .fileImporter(isPresented: $importingConnection, allowedContentTypes: [.json]) { result in
+                if case .success(let url) = result { session.importConnection(url) }
+            }
         }
     }
 

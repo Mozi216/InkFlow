@@ -1,4 +1,3 @@
-import ActivityKit
 import InkFlowCore
 import Foundation
 import OSLog
@@ -7,9 +6,10 @@ import OSLog
     var onFailure: ((String) -> Void)?
     private let recognition: AudioRecognition
     private let catalog = NetEaseClient()
-    private let publisher = LiveActivityPublisher()
+    private var publisher: BroadcastPublisher?
     private let logger = Logger(subsystem: "com.inkflow.mobile", category: "BroadcastLyrics")
-    private var activity: Activity<LyricActivity>?
+    private var connection: BroadcastConnection?
+    private var lastState: LyricActivity.ContentState?
     private var clock = PlaybackClock()
     private var dates = PlaybackDates()
     private var document: LyricDocument?
@@ -29,16 +29,17 @@ import OSLog
     init(recognition: AudioRecognition) { self.recognition = recognition }
 
     func start() {
-        let activities = Activity<LyricActivity>.activities
-        logger.info("Available activities: \(activities.count)")
-        guard let activity = activities.first(where: {
-            $0.content.state.source == .broadcast && ($0.activityState == .active || $0.activityState == .stale)
-        }) else {
-            onFailure?("系统音频扩展未能访问歌词实时活动。请返回 InkFlow 重新连接；若仍出现此提示，本机连接方式尚不可用。")
+        do { connection = try BroadcastStore.read() }
+        catch {
+            onFailure?("没有已准备的推送连接。请先在 InkFlow 检查签名和推送服务配置。")
             return
         }
-        self.activity = activity
+        guard let connection else { return }
+        let publisher = BroadcastPublisher(connection: connection)
+        publisher.onFailure = { [weak self] reason in self?.onFailure?(reason) }
+        self.publisher = publisher
         started = true
+        logger.info("Audio recognition started with a registered relay session")
         recognition.onMatch = { [weak self] observation in
             Task { @MainActor in self?.matched(observation) }
         }
@@ -74,36 +75,36 @@ import OSLog
         recognition.stop()
         resolve?.cancel()
         silence?.cancel()
-        await publisher.cancel()
-        await activity?.end(nil, dismissalPolicy: .immediate)
-        activity = nil
+        if var state = lastState {
+            state.position = state.time(at: Date())
+            state.anchorDate = Date()
+            state.playing = false
+            state.connectionActive = false
+            lastState = state
+        }
+        await publisher?.finish(lastState)
+        publisher = nil
+        connection = nil
     }
 
     func checkConnection() {
-        guard started, let activity else { return }
-        guard activity.activityState == .active || activity.activityState == .stale else {
+        guard started, let connection else { return }
+        guard let saved = try? BroadcastStore.read(), saved.id == connection.id else {
             started = false
             onFailure?("歌词连接已结束")
             Task { await stop() }
             return
         }
-        if document == nil {
-            var state = activity.content.state
-            state.anchorDate = Date()
-            publisher.submit(state, to: activity)
-        } else if !clock.running {
-            refresh(force: true)
+        let changed = saved.appearance != connection.appearance
+        self.connection = saved
+        if document != nil { refresh(force: changed) }
+        else if ProcessInfo.processInfo.systemUptime - lastPublish >= 15 {
+            showMessage(lastState?.message ?? "等待音乐音频；请在网易云播放")
         }
     }
 
     private func received(level: Double, at uptime: Double) {
-        guard started, let activity else { return }
-        guard activity.activityState == .active || activity.activityState == .stale else {
-            started = false
-            onFailure?("歌词连接已结束")
-            Task { await stop() }
-            return
-        }
+        guard started else { return }
         if level > 0.00001 { lastSound = uptime }
         if clock.running && uptime - lastSound > 1.5 {
             clock.stop(at: lastSound)
@@ -170,38 +171,46 @@ import OSLog
     }
 
     private func refresh(force: Bool = false) {
-        guard let activity, let document else { return }
+        guard let connection, let document else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        let appearance = activity.content.state.appearance
+        let appearance = connection.appearance
         let position = clock.value(at: now) + appearance.calibration
         guard let selection = document.selection(at: position) else { return }
         let phrase = CompactLyrics.phrase(selection.line, at: position)
         let changed = selection.line.id != lastLineID || phrase.id != lastPhraseID || selection.waiting != lastWaiting
-        guard force || changed || (clock.running && now - lastPublish >= 1) else { return }
+        let clockChanged = lastState.map {
+            $0.playing != clock.running || abs($0.time(at: Date()) - position) > 0.3 || $0.appearance != appearance
+        } ?? true
+        guard changed || (force && clockChanged) || now - lastPublish >= 15 else { return }
         dates.update(clock, at: now, date: Date(), calibration: appearance.calibration)
         revision += 1
         var next = selection.next
         next?.words = []
-        let state = LyricActivity.ContentState(line: selection.line, next: next, appearance: appearance,
+        var state = LyricActivity.ContentState(line: selection.line, next: next, appearance: appearance,
             anchorDate: Date(), position: position, playing: clock.running, waiting: selection.waiting,
             repeated: document.lines.filter { $0.text == selection.line.text }.count > 1,
             revision: revision, source: .broadcast, playbackStart: dates.start, artwork: artwork,
             message: document.precision == .word ? "逐字同步" : "逐行同步 · 填充为估计", connectionActive: true)
+        state.relaySession = connection.id
         lastPublish = now
         lastLineID = selection.line.id
         lastPhraseID = phrase.id
         lastWaiting = selection.waiting
-        if !publisher.submit(state, to: activity) { showMessage("这句歌词过长，暂时无法在岛内显示") }
+        lastState = state
+        publisher?.submit(state)
     }
 
     private func showMessage(_ message: String) {
-        guard let activity else { return }
-        var state = LyricActivity.ContentState.waiting(appearance: activity.content.state.appearance)
+        guard let connection else { return }
+        var state = LyricActivity.ContentState.waiting(appearance: connection.appearance)
         state.source = .broadcast
         state.message = message
         state.connectionActive = started
+        state.relaySession = connection.id
         revision += 1
         state.revision = revision
-        publisher.submit(state, to: activity)
+        lastState = state
+        lastPublish = ProcessInfo.processInfo.systemUptime
+        publisher?.submit(state)
     }
 }

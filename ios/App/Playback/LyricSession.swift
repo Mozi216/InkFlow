@@ -28,6 +28,7 @@ import InkFlowCore
     private var activity: Activity<LyricActivity>?
     private var activityObservation: Task<Void, Never>?
     private let publisher = LiveActivityPublisher()
+    private let broadcastRelay = BroadcastRelay()
     private var playbackDates = PlaybackDates()
     private var artworkData: Data?
     private var resolveTask: Task<Void, Never>?
@@ -55,7 +56,7 @@ import InkFlowCore
         #if targetEnvironment(simulator)
         return "系统音频连接需要真机；模拟器可测试歌词预览。"
         #else
-        return usesBroadcast ? nil : capture.unavailableReason
+        return usesBroadcast ? BroadcastRelay.unavailableReason : capture.unavailableReason
         #endif
     }
 
@@ -86,6 +87,10 @@ import InkFlowCore
             diagnostics.record("capture", ["active": String(active), "message": message])
             if !active && !preview { clock.stop(at: ProcessInfo.processInfo.systemUptime); refresh() }
         }
+        broadcastRelay.onFailure = { [weak self] message in
+            self?.status = message
+            self?.diagnostics.record("relay-error", ["message": message])
+        }
         capture.onEnd = { [weak self] in
             guard let self else { return }
             connecting = false
@@ -106,7 +111,8 @@ import InkFlowCore
             Task { @MainActor in self?.diagnostics.record("recognition-error", ["message": error]) }
         }
         refresh()
-        if let existing = Activity<LyricActivity>.activities.first(where: { $0.content.state.source == .broadcast }) {
+        if let saved = try? BroadcastStore.read(),
+           let existing = Activity<LyricActivity>.activities.first(where: { $0.content.state.relaySession == saved.id }) {
             activity = existing
             broadcastPrepared = true
             preview = false
@@ -115,6 +121,7 @@ import InkFlowCore
             capturing = state?.connectionActive == true
             status = state?.message ?? "系统音频连接"
             observeBroadcast(existing)
+            broadcastRelay.restore(existing)
         }
     }
 
@@ -158,6 +165,7 @@ import InkFlowCore
 
     func stopCapture() async {
         broadcastPrepared = false
+        await broadcastRelay.stop()
         await capture.stop()
         state = nil
     }
@@ -166,14 +174,24 @@ import InkFlowCore
         await stopCapture()
         tick?.cancel()
         preview = false
-        broadcastPrepared = true
         var content = LyricActivity.ContentState.waiting(appearance: appearance)
         content.source = .broadcast
         content.message = "请在 InkFlow 中确认系统音频连接"
         state = content
-        status = "点击下方系统按钮开始连接"
+        status = "正在准备实时活动推送连接"
         await startIsland()
-        if activity == nil { broadcastPrepared = false }
+        guard let activity else { return }
+        do {
+            try await broadcastRelay.prepare(activity, appearance: appearance)
+            broadcastPrepared = true
+            status = "点击下方系统按钮开始连接"
+            observeBroadcast(activity)
+        } catch {
+            await broadcastRelay.stop()
+            await retireIsland()
+            status = error.localizedDescription
+            diagnostics.record("relay-prepare-error", ["message": status])
+        }
     }
 
     func startPreview() async {
@@ -247,7 +265,8 @@ import InkFlowCore
         }
         do {
             activity = try Activity.request(attributes: LyricActivity(song: "InkFlow"),
-                content: ActivityContent(state: state, staleDate: state.staleDate), pushType: nil)
+                content: ActivityContent(state: state, staleDate: state.staleDate),
+                pushType: state.source == .broadcast ? .token : nil)
             if broadcastPrepared, let activity { observeBroadcast(activity) }
             diagnostics.record("island-start", ["source": preview ? "preview" : "capture"])
         } catch { status = error.localizedDescription; diagnostics.record("island-error", ["message": status]) }
@@ -268,7 +287,22 @@ import InkFlowCore
 
     func endIsland() async {
         broadcastPrepared = false
+        await broadcastRelay.stop()
         await retireIsland()
+    }
+
+    func importConnection(_ url: URL) {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        do {
+            guard !broadcastPrepared && !connecting else {
+                throw RelayError.unavailable("请先停止当前连接，再更换配置。")
+            }
+            let data = try Data(contentsOf: url)
+            guard data.count < 8192 else { throw RelayError.unavailable("连接配置文件过大。") }
+            try JSONDecoder().decode(RelayConfiguration.self, from: data).save()
+            status = "连接配置已保存"
+        } catch { status = error.localizedDescription }
     }
 
     private func observeBroadcast(_ activity: Activity<LyricActivity>) {
@@ -416,18 +450,8 @@ import InkFlowCore
     func refresh() {
         tick?.cancel()
         if broadcastPrepared {
-            if let activity {
-                var content = activity.content.state
-                if content.appearance != appearance {
-                    let now = Date()
-                    content.position = content.time(at: now)
-                    content.anchorDate = now
-                    content.appearance = appearance
-                    content.revision += 1
-                    state = content
-                    publish(content)
-                }
-            }
+            // One producer owns broadcast updates. Mixing local and APNs updates can race.
+            broadcastRelay.updateAppearance(appearance)
             return
         }
         guard preview || trackID != nil else { return }

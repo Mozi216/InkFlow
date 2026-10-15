@@ -10,7 +10,7 @@ struct ConnectLyricsIntent: AppIntent {
     @MainActor func perform() async throws -> some IntentResult {
         let connected = Activity<LyricActivity>.activities.contains {
             $0.content.state.connectionActive == true && $0.activityState == .active
-                && Date().timeIntervalSince($0.content.state.anchorDate) < 12
+                && Date().timeIntervalSince($0.content.state.anchorDate) < ($0.content.state.source == .broadcast ? 45 : 12)
         }
         if connected { return .result() }
         try await continueInForeground(nil, alwaysConfirm: false)

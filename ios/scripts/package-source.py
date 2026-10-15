@@ -6,7 +6,7 @@ import zipfile
 root = pathlib.Path(__file__).resolve().parents[2]
 output = root / "release" / "InkFlow-iOS-source.zip"
 output.parent.mkdir(parents=True, exist_ok=True)
-extensions = {".swift", ".plist", ".xcprivacy", ".json", ".svg", ".png", ".py", ".sh", ".ps1", ".mjs", ".md", ".yml"}
+extensions = {".swift", ".plist", ".entitlements", ".xcprivacy", ".json", ".svg", ".png", ".py", ".sh", ".ps1", ".mjs", ".md", ".yml"}
 excluded = {"build", ".build", "InkFlow.xcodeproj", "__pycache__"}
 paths = [p for p in (root / "ios").rglob("*") if p.is_file()
          and (p.suffix in extensions or p.name == ".gitignore")

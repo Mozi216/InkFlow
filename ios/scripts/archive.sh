@@ -43,6 +43,9 @@ xcodebuild -project InkFlow.xcodeproj -scheme InkFlow -configuration Release \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" INKFLOW_BUNDLE_ID="$INKFLOW_BUNDLE_ID" \
   APP_PROFILE_UUID="$APP_PROFILE_UUID" WIDGET_PROFILE_UUID="$WIDGET_PROFILE_UUID" \
   BROADCAST_PROFILE_UUID="$BROADCAST_PROFILE_UUID" \
+  INKFLOW_RELAY_GROUP="$INKFLOW_RELAY_GROUP" INKFLOW_APNS_ENVIRONMENT=production \
+  INKFLOW_APP_ENTITLEMENTS=App/Relay.entitlements \
+  INKFLOW_BROADCAST_ENTITLEMENTS=Broadcast/Relay.entitlements \
   archive | tee build/archive.log
 xcodebuild -exportArchive -archivePath build/InkFlow.xcarchive \
   -exportOptionsPlist "$signing_dir/ExportOptions.plist" -exportPath build/export

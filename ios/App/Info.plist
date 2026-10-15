@@ -13,6 +13,7 @@
     <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
     <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
     <key>NSSupportsLiveActivities</key><true/>
+    <key>InkFlowRelayGroup</key><string>$(INKFLOW_RELAY_GROUP)</string>
     <key>UIBackgroundModes</key><array><string>screen-capture</string></array>
     <key>NSScreenCaptureUsageDescription</key><string>识别你正在播放的歌曲并同步歌词。画面立即丢弃，不保存录音。</string>
     <key>CFBundleURLTypes</key><array><dict>

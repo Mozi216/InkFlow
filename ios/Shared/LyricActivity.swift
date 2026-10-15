@@ -24,10 +24,11 @@ struct LyricActivity: ActivityAttributes {
         var artwork: Data? = nil
         var message: String? = nil
         var connectionActive: Bool? = nil
+        var relaySession: String? = nil
 
         var staleDate: Date? {
             if source == .preview && !playing { return nil }
-            return anchorDate.addingTimeInterval(12)
+            return anchorDate.addingTimeInterval(source == .broadcast ? 45 : 12)
         }
 
         static func waiting(appearance: Appearance) -> Self {

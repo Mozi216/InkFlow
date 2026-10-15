@@ -14,6 +14,8 @@ if [[ "${sdk%%.*}" -lt 27 ]]; then
   exit 1
 fi
 swift test --package-path InkFlowCore 2>&1 | tee build/core-tests.log
+node --test relay/server.test.mjs 2>&1 | tee build/relay-tests.log
+python3 scripts/test-signing.py 2>&1 | tee build/signing-tests.log
 if [[ "${INKFLOW_DEVICE_ONLY:-false}" == true ]]; then
   echo 'Device iteration: core tests and device compilation run; simulator compilation and screenshots are skipped.' | tee build/verification-scope.log
 fi
