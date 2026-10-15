@@ -1,5 +1,6 @@
 #include "fingerprint.h"
 #include "wasm-rt-impl.h"
+#include "wasm-rt-exceptions.h"
 #include <stdio.h>
 #include <math.h>
 #include "include/NativeFingerprint.h"
