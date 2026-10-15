@@ -53,8 +53,9 @@ public enum LyricParser {
         }
         lines.sort { $0.start < $1.start }
         for index in lines.indices {
+            let fallbackEnd = duration > lines[index].start ? duration : lines[index].start + 5
             lines[index].end = max(lines[index].start,
-                index + 1 < lines.count ? lines[index + 1].start : max(duration, lines[index].start + 5))
+                index + 1 < lines.count ? lines[index + 1].start : fallbackEnd)
         }
         return lines
     }

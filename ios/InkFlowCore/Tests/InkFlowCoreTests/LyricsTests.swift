@@ -17,6 +17,7 @@ final class LyricsTests: XCTestCase {
         XCTAssertEqual(lines[0].start, 1.4, accuracy: 0.0001)
         XCTAssertEqual(lines[1].start, 2.95, accuracy: 0.0001)
         XCTAssertEqual(lines.last?.end, 8)
+        XCTAssertEqual(LyricParser.parseLRC("[00:04]stay", duration: 0).last?.end, 9)
     }
 
     func testBreathingGapDoesNotReplaceCurrentLine() {
