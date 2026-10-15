@@ -23,6 +23,10 @@ App 预览用 TimelineView 请求 60 Hz。灵动岛用真实 ActivityKit 更新�
 
 目前的自动同步不是 Windows SMTC 的移植。系统采集必须由用户在系统选择器中开启；采集到的是所选来源的音频，不保证一定来自网易云。画面立即丢弃，不记录原始音频。仅将指纹交给 Shazam 服务，将歌曲名称交给网易云搜索。
 
+App 和实时活动的最低系统版本为 iOS 26，系统音频采集仍要求 iOS 27。低版本可使用原生预览和灵动岛测试，连接按钮会显示实际限制，不能把这些测试算成网易云同步通过。iOS 27 采集类单独做了可用性检查，避免低版本在启动时调用新接口。
+
+[iOS 26 兼容构建](https://github.com/Mozi216/InkFlow/actions/runs/38792294203) 已通过 10 项核心测试、模拟器与设备编译、六种预览截图。实际检查 IPA：两个 bundle 的 `MinimumOSVersion` 均为 `26.0`，ScreenCaptureKit 为弱链接。设备测试包是 `release/InkFlow-iOS-26-unsigned.ipa`，仍需签名。
+
 ## 无 Mac 的构建方式
 
 仓库根目录的 `.github/workflows/ios.yml` 使用 GitHub 提供的 `xcode-27` runner。推送 `codex/ios-native` 分支中的 iOS 改动会运行编译，也可以在 Actions 中手动运行 **InkFlow iOS**；不会自动上传 App Store：
@@ -45,7 +49,9 @@ Shazam 目录识别还要求在 Apple Developer 的 App ID / App Services 中启
 
 ## 插手机后
 
-先有匹配设备的签名包，再安装 Apple 设备驱动和 `pymobiledevice3`，在手机上信任此电脑。开发调试可能需要 Developer Mode 和开发者镜像，届时根据设备版本处理，不自动修改系统设置。
+安装 Apple 设备驱动和 `pymobiledevice3`，在手机上信任此电脑，即可先做连接检查。安装 App 则需要匹配设备的签名包。开发调试还需要 Developer Mode 和开发者镜像；由用户在手机设置中开启并确认重启。
+
+2026-10-16 已在 Windows 上实际连接 iPhone 15 Pro（`iPhone16,1`），设备返回 iOS **26.6.1 / 23G83**，并确认安装网易云音乐 9.6.09。USB 配对已通过，用户已开启开发者模式，开发调试镜像已挂载，DVT 查询通道已验证。设备唯一标识只保存在本机被忽略的 `artifacts/iphone-test` 目录。这不代表 InkFlow 已安装或通过真机测试。
 
 ```powershell
 .\ios\scripts\device.ps1 -Action Check
@@ -53,7 +59,9 @@ Shazam 目录识别还要求在 Apple Developer 的 App ID / App Services 中启
 .\ios\scripts\device.ps1 -Action Screenshot -Output .\artifacts\iphone-screen.png
 ```
 
-以上设备命令尚未在这台电脑连接 iPhone 执行；仅插线不代表具备签名或完成调试。
+`Check` 已在这台 iPhone 执行；脚本会优先使用项目内 `tools/ios-device` 的工具。`Install` 仍拒绝未带描述文件的包；`Screenshot` 需要已准备好的开发调试连接。仅插线不代表具备签名或完成调试。
+
+没有付费会员时，可尝试用自己的免费 Apple 账户通过 AltServer 为测试包签名。登录和双重认证由用户在本机窗口操作，不把密码或证书放到仓库。此方式是否保留所需服务权限必须实测；不能据此承诺 ShazamKit 识别或 App Store 发布已经可用。
 
 ## 真机验收顺序
 
