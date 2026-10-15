@@ -54,7 +54,7 @@ struct LyricArtwork: View {
             }
             .frame(width: plan.width, height: plan.height)
             .scaleEffect(factor, anchor: .topLeading)
-            .frame(width: plan.width * factor, height: plan.height * factor)
+            .frame(width: plan.width * factor, height: plan.height * factor, alignment: .topLeading)
             .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
         }
         .accessibilityElement(children: .ignore)

@@ -2,6 +2,7 @@
 import json
 import pathlib
 import subprocess
+import sys
 import time
 
 root = pathlib.Path(__file__).resolve().parents[1]
@@ -9,7 +10,9 @@ output = root / "build" / "app-preview"
 output.mkdir(parents=True, exist_ok=True)
 
 def run(*arguments, **kwargs):
-    return subprocess.run(["xcrun", "simctl", *arguments], check=True, text=True, **kwargs)
+    print("simctl " + " ".join(arguments), flush=True)
+    return subprocess.run(["xcrun", "simctl", *arguments], check=True, text=True,
+                          timeout=kwargs.pop("timeout", 90), **kwargs)
 
 inventory = json.loads(run("list", "devices", "available", "--json", capture_output=True).stdout)
 devices = [d for runtime, entries in inventory["devices"].items() if "iOS-27" in runtime
@@ -19,10 +22,13 @@ if not devices:
 devices.sort(key=lambda d: ("Pro" not in d["name"], "18" not in d["name"]))
 device = devices[0]
 if device["state"] != "Booted": run("boot", device["udid"])
-run("bootstatus", device["udid"], "-b")
+if "--boot-only" in sys.argv:
+    print("Started simulator boot; compilation can proceed while it finishes.", flush=True)
+    raise SystemExit(0)
+run("bootstatus", device["udid"], "-b", timeout=480)
 run("install", device["udid"], str(root / "build/DerivedData/Build/Products/Debug-iphonesimulator/InkFlow.app"))
 for style in ("flow", "columns", "scatter", "collage", "cinema", "mv"):
-    subprocess.run(["xcrun", "simctl", "terminate", device["udid"], "com.inkflow.mobile"], capture_output=True)
+    subprocess.run(["xcrun", "simctl", "terminate", device["udid"], "com.inkflow.mobile"], capture_output=True, timeout=30)
     run("launch", device["udid"], "com.inkflow.mobile", "--preview-style", style,
         "--preview-time", "3.3", "--preview-paused")
     time.sleep(2)

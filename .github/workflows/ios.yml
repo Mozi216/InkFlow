@@ -19,9 +19,12 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install project generator
         run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Start preview simulator
+        run: python3 ios/scripts/capture-simulator.py --boot-only
       - name: Test core and compile both iOS targets
         run: bash ios/scripts/build.sh
       - name: Capture native app previews
+        timeout-minutes: 12
         run: python3 ios/scripts/capture-simulator.py
       - name: Create device IPA
         if: inputs.signed_ipa
