@@ -16,7 +16,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ios-${{ github.ref }}
+  group: ios-${{ github.ref }}-${{ inputs.device_only && 'device' || 'full' }}
   cancel-in-progress: true
 jobs:
   build:
