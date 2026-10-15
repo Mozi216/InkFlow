@@ -20,7 +20,7 @@ struct InkFlowWidget: Widget {
             } compactTrailing: {
                 CompactLyricArtwork(state: context.state, stale: context.isStale, side: 1)
             } minimal: {
-                SongArtwork(state: context.state).frame(width: 24, height: 24)
+                CompactLyricArtwork(state: context.state, stale: context.isStale)
             }
             .keylineTint(.white.opacity(0.35))
             .widgetURL(URL(string: "inkflow://lyrics"))

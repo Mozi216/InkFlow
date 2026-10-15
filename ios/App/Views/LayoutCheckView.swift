@@ -10,7 +10,6 @@ struct LayoutCheckView: View {
             row("灯光落下，预览到这里", position: 9, complete: false)
             row("灯光落下，预览到这里", position: 10, complete: true)
             row("Let the light stay with us", position: 6, complete: false)
-            row("光", position: 1, complete: false)
             BroadcastConnectionView()
         }
         .padding(20).preferredColorScheme(.dark)
@@ -29,6 +28,8 @@ struct LayoutCheckView: View {
                 Color.clear.frame(width: 126, height: 27)
                 CompactLyricArtwork(state: state, stale: false, side: 1)
             }.padding(6).background(.black, in: Capsule())
+            CompactLyricArtwork(state: state, stale: false)
+                .padding(5).background(.black, in: Capsule())
         }
     }
 }
