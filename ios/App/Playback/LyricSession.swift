@@ -118,6 +118,13 @@ import InkFlowCore
         refresh()
         diagnostics.record("local-connection-capability", ["sharedGroup": String(LocalBroadcastStore.folder != nil)])
         _ = try? diagnostics.export()
+        if ProcessInfo.processInfo.arguments.contains("--check-fingerprint") {
+            Task {
+                let result = await FingerprintCheck.run()
+                diagnostics.record("fingerprint-check", result)
+                _ = try? diagnostics.export()
+            }
+        }
     }
 
     func beginCapture() async {
@@ -349,7 +356,7 @@ import InkFlowCore
         guard capturing, !preview else { return }
         match = observation
         quiet = ProcessInfo.processInfo.systemUptime - lastSound >= 1.5
-        let key = observation.title + "|" + observation.artist
+        let key = String(observation.song.id)
         diagnostics.record("match", ["position": String(observation.position), "song": observation.title])
         if key == matchKey, trackID != nil {
             clock.followAudio(position: observation.position, observedAt: observation.uptime,
@@ -369,20 +376,8 @@ import InkFlowCore
         let requestGeneration = generation
         status = "正在获取歌词"
         resolveTask = Task {
-            do {
-                let songs = try await catalog.search(title: observation.title, artist: observation.artist)
-                guard !Task.isCancelled, generation == requestGeneration, matchKey == key else { return }
-                if let song = NetEaseClient.bestMatch(songs, title: observation.title, artist: observation.artist) {
-                    await select(song)
-                } else {
-                    candidates = songs
-                    status = "请选择歌曲版本"
-                }
-            } catch {
-                guard !Task.isCancelled, generation == requestGeneration else { return }
-                matchKey = ""
-                status = error.localizedDescription
-            }
+            guard !Task.isCancelled, generation == requestGeneration, matchKey == key else { return }
+            await select(observation.song)
         }
     }
 

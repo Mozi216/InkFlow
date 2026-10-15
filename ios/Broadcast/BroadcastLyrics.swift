@@ -61,6 +61,7 @@ import OSLog
     }
 
     func pause() {
+        recognition.stop()
         silence?.cancel()
         clock.stop(at: ProcessInfo.processInfo.systemUptime)
         refresh(force: true)
@@ -129,7 +130,7 @@ import OSLog
 
     private func matched(_ observation: SongMatch) {
         guard started else { return }
-        let key = observation.title + "|" + observation.artist
+        let key = String(observation.song.id)
         if key == songKey {
             if document != nil {
                 clock.followAudio(position: observation.position, observedAt: observation.uptime,
@@ -147,13 +148,7 @@ import OSLog
         showMessage("已识别音乐，正在获取歌词")
         resolve = Task {
             do {
-                let songs = try await catalog.search(title: observation.title, artist: observation.artist)
-                guard !Task.isCancelled, generation == requestGeneration else { return }
-                guard let song = NetEaseClient.bestMatch(songs, title: observation.title, artist: observation.artist) else {
-                    songKey = ""
-                    showMessage("未找到唯一匹配版本，等待再次识别")
-                    return
-                }
+                let song = observation.song
                 let lyrics = try await catalog.lyrics(for: song)
                 guard !Task.isCancelled, generation == requestGeneration else { return }
                 document = lyrics

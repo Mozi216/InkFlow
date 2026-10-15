@@ -1,43 +1,53 @@
 import AVFoundation
-import ShazamKit
 
-struct SongMatch {
-    let title: String
-    let artist: String
-    let position: Double
-    let uptime: Double
-}
-
-final class AudioRecognition: NSObject, SHSessionDelegate {
+final class AudioRecognition {
     let queue = DispatchQueue(label: "InkFlow.audio", qos: .userInitiated)
     var onMatch: ((SongMatch) -> Void)?
     var onLevel: ((Double, Double) -> Void)?
     var onError: ((String) -> Void)?
     var onProgress: ((Double) -> Void)?
-    private var session: SHSession?
+    private let matcher = NetEaseAudioMatcher()
+    private var request: Task<Void, Never>?
     private var converter: AVAudioConverter?
-    private let output = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+    private let output = AVAudioFormat(standardFormatWithSampleRate: 8_000, channels: 1)!
+    private var audio: [Float] = []
+    private let windowFrames = 96_000
+    private var nextAttempt = 0.0
     private var lastMeter = 0.0
-    private var sampleTime: AVAudioFramePosition = 0
+    private var lastSound = 0.0
+    private var lastBuffer = 0.0
     private var processedSeconds = 0.0
+    private var generation = 0
+    private var active = false
 
     func reset() {
         queue.async {
-            let session = SHSession()
-            session.delegate = self
-            self.session = session
+            self.clearWindow()
             self.converter = nil
-            self.sampleTime = 0
+            self.lastBuffer = 0
+            self.active = true
         }
     }
 
     func stop() {
-        queue.async { self.session?.delegate = nil; self.session = nil; self.converter = nil }
+        queue.async {
+            self.active = false
+            self.clearWindow()
+            self.converter = nil
+        }
     }
 
-    // Called on queue by ScreenCaptureKit. No audio or screen content is saved.
+    private func clearWindow() {
+        generation += 1
+        request?.cancel()
+        request = nil
+        audio.removeAll(keepingCapacity: true)
+        nextAttempt = 0
+    }
+
+    // Both capture drivers call this on queue. Only an in-memory audio window is kept.
     func consume(_ sample: CMSampleBuffer) {
-        guard let session, sample.isValid, let description = sample.formatDescription,
+        guard active, sample.isValid, let description = sample.formatDescription,
               let basic = CMAudioFormatDescriptionGetStreamBasicDescription(description),
               let format = AVAudioFormat(streamDescription: basic) else { return }
         let frames = CMSampleBufferGetNumSamples(sample)
@@ -46,7 +56,10 @@ final class AudioRecognition: NSObject, SHSessionDelegate {
         input.frameLength = AVAudioFrameCount(frames)
         guard CMSampleBufferCopyPCMDataIntoAudioBufferList(sample, at: 0, frameCount: Int32(frames),
                                                            into: input.mutableAudioBufferList) == noErr else { return }
-        if converter?.inputFormat != format { converter = AVAudioConverter(from: format, to: output) }
+        if converter?.inputFormat != format {
+            clearWindow()
+            converter = AVAudioConverter(from: format, to: output)
+        }
         guard let converter,
               let buffer = AVAudioPCMBuffer(pcmFormat: output,
                 frameCapacity: AVAudioFrameCount(ceil(Double(frames) * output.sampleRate / format.sampleRate)) + 32) else { return }
@@ -54,37 +67,52 @@ final class AudioRecognition: NSObject, SHSessionDelegate {
         var error: NSError?
         converter.convert(to: buffer, error: &error) { _, status in
             if supplied { status.pointee = .noDataNow; return nil }
-            supplied = true; status.pointee = .haveData; return input
+            supplied = true
+            status.pointee = .haveData
+            return input
         }
         guard error == nil, buffer.frameLength > 0, let samples = buffer.floatChannelData?[0] else { return }
+        let count = Int(buffer.frameLength)
         var sum = 0.0
-        for index in 0..<Int(buffer.frameLength) { sum += Double(samples[index] * samples[index]) }
+        for index in 0..<count { sum += Double(samples[index] * samples[index]) }
+        let level = sqrt(sum / Double(count))
         let now = ProcessInfo.processInfo.systemUptime
-        processedSeconds += Double(buffer.frameLength) / output.sampleRate
+        processedSeconds += Double(count) / output.sampleRate
         if now - lastMeter >= 0.25 {
             lastMeter = now
-            onLevel?(sqrt(sum / Double(buffer.frameLength)), now)
+            onLevel?(level, now)
             onProgress?(processedSeconds)
         }
-        session.matchStreamingBuffer(buffer, at: AVAudioTime(sampleTime: sampleTime, atRate: output.sampleRate))
-        sampleTime += AVAudioFramePosition(buffer.frameLength)
-    }
-
-    func session(_ session: SHSession, didFind match: SHMatch) {
-        queue.async {
-            guard session === self.session, let item = match.mediaItems.first,
-                  let title = item.title, let artist = item.artist else { return }
-            self.onMatch?(SongMatch(title: title, artist: artist, position: item.predictedCurrentMatchOffset,
-                                   uptime: ProcessInfo.processInfo.systemUptime))
+        if now - lastBuffer > 0.6 { clearWindow() }
+        lastBuffer = now
+        if level > 0.00001 { lastSound = now }
+        if now - lastSound > 1.5 {
+            if !audio.isEmpty || request != nil { clearWindow() }
+            return
         }
-    }
-
-    func session(_ session: SHSession, didNotFindMatchFor signature: SHSignature, error: Error?) {
-        queue.async {
-            guard session === self.session else { return }
-            if let error {
-                let details = error as NSError
-                self.onError?("\(details.domain) / \(details.code): \(details.localizedDescription)")
+        audio.append(contentsOf: UnsafeBufferPointer(start: samples, count: count))
+        if audio.count > windowFrames { audio.removeFirst(audio.count - windowFrames) }
+        guard audio.count == windowFrames, request == nil, now >= nextAttempt else { return }
+        let pcm = audio.withUnsafeBytes { Data($0) }
+        let startUptime = now - 12
+        let expectedGeneration = generation
+        nextAttempt = now + 4
+        request = Task { [weak self, matcher] in
+            do {
+                let match = try await matcher.match(pcm: pcm, startUptime: startUptime)
+                try Task.checkCancellation()
+                self?.queue.async { [weak self] in
+                    guard let self, self.active, self.generation == expectedGeneration else { return }
+                    self.request = nil
+                    if let match { self.onMatch?(match) }
+                }
+            } catch {
+                let cancelled = Task.isCancelled
+                self?.queue.async { [weak self] in
+                    guard let self, self.active, self.generation == expectedGeneration else { return }
+                    self.request = nil
+                    if !cancelled { self.onError?(error.localizedDescription) }
+                }
             }
         }
     }

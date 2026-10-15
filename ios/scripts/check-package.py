@@ -11,12 +11,16 @@ def check(ipa):
         paths = [name for name in archive.namelist()
                  if name.endswith("/Info.plist") and name.count("/") in (2, 4)]
         bundles = {name: plistlib.loads(archive.read(name)) for name in paths}
+        names = set(archive.namelist())
     apps = [(name, info) for name, info in bundles.items() if name.count("/") == 2]
     assert len(apps) == 1, "Expected one containing application"
     app_path, app = apps[0]
     parent = app_path.removesuffix("Info.plist")
     app_id = app["CFBundleIdentifier"]
     version = app["CFBundleVersion"]
+    if int(version) >= 10:
+        for folder in (parent, parent + "PlugIns/InkFlowBroadcast.appex/"):
+            assert folder + "fingerprint-runtime.js" in names, "Missing fingerprint runtime"
     assert app.get("NSSupportsLiveActivities") is True
     expected = {
         "InkFlowLiveActivity": ("lyrics", "com.apple.widgetkit-extension"),
