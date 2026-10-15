@@ -21,6 +21,8 @@ App 预览用 TimelineView 请求 60 Hz。灵动岛用真实 ActivityKit 更新�
 
 构建 2 修正预览的测试流程：一个按钮从零开始并清理旧活动；预览首尾使用不同句子；40 秒结束后停止计时并显示结束状态；再次点播放从零重播。Widget 会处理 `isStale`，不再无限展示过期歌词。诊断记录增加前后台切换及提交更新的时刻，提交成功不等同于系统实际渲染。这些修正**没有解决后台执行问题**，也没有通过新一轮真机验收。
 
+构建 3 增加单独的 **20 秒灵动岛演示**：点击后从头播放五句样例，同时申请 UIKit 短时后台任务。正常结束、暂停、退出演示或系统提前收回执行时间时释放任务，不续期、不循环保活。它用于验证真实灵动岛中的短时换句、逐字填充与过渡，不是网易云的长期后台同步方案。系统仍可拒绝或提前终止任务；目前尚未在手机上验证构建 3。
+
 网易云歌词 HTTP 接口已在 Windows 上验证。音频采集、Shazam 时码、跨 App 后台运行均待 iPhone 实测；模拟器不提供系统音频采集模块，只用于检查原生界面。静音会冻结未确认的时钟，并等待下一次指纹匹配；不能可靠区分歌曲本身的完全静音与暂停，恢复可能有识别延迟。版本匹配不唯一时要求选择，不把第一条搜索结果当成正确歌曲。
 
 目前的自动同步不是 Windows SMTC 的移植。系统采集必须由用户在系统选择器中开启；采集到的是所选来源的音频，不保证一定来自网易云。画面立即丢弃，不记录原始音频。仅将指纹交给 Shazam 服务，将歌曲名称交给网易云搜索。
@@ -80,5 +82,6 @@ Shazam 目录识别还要求在 Apple Developer 的 App ID / App Services 中启
 - [ShazamKit App ID 设置](https://developer.apple.com/help/account/services/shazamkit)
 - [WidgetKit 动画限制](https://developer.apple.com/documentation/widgetkit/animating-data-updates-in-widgets-and-live-activities)
 - [Live Activities 生命周期和容量](https://developer.apple.com/documentation/activitykit/displaying-live-data-with-live-activities)
+- [UIKit 短时后台任务与到期处理](https://developer.apple.com/documentation/uikit/extending-your-app-s-background-execution-time)
 - [Xcode 27 云端 runner](https://github.com/actions/runner-images/issues/14404)
 - [GitHub 签名流程](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications)

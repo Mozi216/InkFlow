@@ -18,6 +18,7 @@ import InkFlowCore
     @Published private(set) var candidates: [NetEaseSong] = []
     @Published private(set) var level = 0.0
     @Published private(set) var startingIslandPreview = false
+    @Published private(set) var previewDuration = PreviewLyrics.duration
     let diagnostics = Diagnostics()
     private let capture = SystemAudioCapture()
     private let catalog = NetEaseClient()
@@ -37,6 +38,9 @@ import InkFlowCore
     private var quiet = false
     private var lastPublicationLog = 0.0
     private var lastPublishedLineStart: Double?
+    private let previewBackgroundTask = PreviewBackgroundTask()
+    private var shortIslandPreview = false
+    private var previewExpired = false
 
     var captureUnavailableReason: String? { capture.unavailableReason }
 
@@ -123,6 +127,9 @@ import InkFlowCore
     func startPreview() async {
         await stopCapture()
         preview = true
+        shortIslandPreview = false
+        previewExpired = false
+        previewDuration = PreviewLyrics.duration
         document = PreviewLyrics.document
         title = "InkFlow"
         status = "效果预览"
@@ -137,14 +144,26 @@ import InkFlowCore
         startingIslandPreview = true
         defer { startingIslandPreview = false }
         await startPreview()
+        shortIslandPreview = true
+        previewDuration = PreviewLyrics.islandDuration
+        document = PreviewLyrics.islandDocument
+        clock.duration = previewDuration
+        clock.align(position: 0, at: ProcessInfo.processInfo.systemUptime, running: true)
+        status = "20 秒灵动岛演示"
+        refresh()
+        keepPreviewRunningBriefly()
         await startIsland()
+        if activity == nil { previewBackgroundTask.end() }
     }
 
     func togglePreviewPlayback() {
         guard preview else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        let finished = clock.hasFinished(at: now)
+        let finished = clock.hasFinished(at: now) || previewExpired
+        previewExpired = false
         clock.align(position: finished ? 0 : clock.value(at: now), at: now, running: finished || !clock.running)
+        if shortIslandPreview && clock.running && activity != nil { keepPreviewRunningBriefly() }
+        else { previewBackgroundTask.end() }
         status = clock.running ? "效果预览" : "预览已暂停"
         refresh()
     }
@@ -178,6 +197,7 @@ import InkFlowCore
     }
 
     private func retireIsland() async {
+        previewBackgroundTask.end()
         publication?.cancel()
         await publication?.value
         publication = nil
@@ -200,6 +220,21 @@ import InkFlowCore
         if phase == .active { refresh() }
         do { _ = try diagnostics.export() }
         catch { diagnostics.record("diagnostics-write-error", ["message": error.localizedDescription]) }
+    }
+
+    private func keepPreviewRunningBriefly() {
+        // This assertion finishes a bounded preview. It is never used for NetEase sync.
+        let granted = previewBackgroundTask.begin { [weak self] in
+            guard let self else { return }
+            previewExpired = true
+            diagnostics.record("preview-background-expired")
+            refresh()
+        }
+        diagnostics.record("preview-background-request", ["granted": String(granted)])
+        if !granted {
+            previewExpired = true
+            refresh()
+        }
     }
 
     private func received(_ observation: SongMatch) {
@@ -294,11 +329,11 @@ import InkFlowCore
         tick?.cancel()
         guard preview || trackID != nil else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        let complete = preview && clock.hasFinished(at: now)
+        let complete = preview && (clock.hasFinished(at: now) || previewExpired)
         if complete {
             if clock.running { diagnostics.record("preview-complete") }
             clock.stop(at: now)
-            status = "预览已结束 · 点播放重新开始"
+            status = previewExpired ? "系统提前结束了短时预览" : "预览已结束 · 点播放重新开始"
         }
         let position = clock.value(at: now) + appearance.calibration
         guard let selection = document.selection(at: position) else { state = nil; return }
@@ -322,7 +357,10 @@ import InkFlowCore
     }
 
     private func publish(_ content: LyricActivity.ContentState) {
-        guard let activity else { return }
+        guard let activity else {
+            if content.complete == true { previewBackgroundTask.end() }
+            return
+        }
         do {
             let bytes = try JSONEncoder().encode(content).count + JSONEncoder().encode(activity.attributes).count
             guard bytes < 4_000 else {
@@ -336,6 +374,7 @@ import InkFlowCore
             guard !Task.isCancelled else { return }
             await activity.update(ActivityContent(state: content, staleDate: content.staleDate))
             guard !Task.isCancelled else { return }
+            if content.complete == true || !content.playing { previewBackgroundTask.end() }
             let now = ProcessInfo.processInfo.systemUptime
             if content.line.start != lastPublishedLineStart || now - lastPublicationLog >= 5 {
                 lastPublishedLineStart = content.line.start

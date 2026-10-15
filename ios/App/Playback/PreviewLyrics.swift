@@ -2,6 +2,7 @@ import InkFlowCore
 
 enum PreviewLyrics {
     static let duration = 40.0
+    static let islandDuration = 20.0
     // 自写测试文案。首尾不同，便于区分结束和卡住。
     static let document: LyricDocument = {
         let samples: [(String, Double, Double)] = [
@@ -19,4 +20,10 @@ enum PreviewLyrics {
             })
         }, precision: .word)
     }()
+
+    static let islandDocument = LyricDocument(lines: document.lines.map { line in
+        LyricLine(line.text, start: line.start / 2, end: line.end / 2, words: line.words.map {
+            LyricWord($0.text, start: $0.start / 2, end: $0.end / 2)
+        })
+    }, precision: .word)
 }
