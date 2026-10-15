@@ -72,7 +72,7 @@ struct LyricArtwork: View {
                     .frame(width: word.width + word.font * 0.15, height: word.font * 1.22)
             }
             glyph.foregroundStyle(color.opacity(paper ? 0.34 : 0.2))
-            // Apply the mask after the glow so the system timer cannot flash an unmasked shadow.
+            // Keep the glow and filled glyph in the same mask pass.
             glyph.foregroundStyle(color)
                 .shadow(color: paper ? .clear : ink.opacity(0.65 * min(1, state.appearance.glow)), radius: 8 * state.appearance.glow)
                 .shadow(color: paper ? .clear : ink.opacity(0.28), radius: 20 * state.appearance.glow)

@@ -4,6 +4,7 @@ import OSLog
 final class SampleHandler: RPBroadcastSampleHandler {
     private let recognition = AudioRecognition()
     private var session: BroadcastLyrics?
+    private var lastHealthCheck = 0.0
     private let logger = Logger(subsystem: "com.inkflow.mobile", category: "Broadcast")
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
@@ -21,8 +22,14 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
     override func processSampleBuffer(_ sampleBuffer: CMSampleBuffer, with sampleBufferType: RPSampleBufferType) {
         // No video or microphone processing, recording or upload.
-        guard sampleBufferType == .audioApp else { return }
-        recognition.queue.async { [recognition] in recognition.consume(sampleBuffer) }
+        if sampleBufferType == .audioApp {
+            recognition.queue.async { [recognition] in recognition.consume(sampleBuffer) }
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastHealthCheck >= 3 {
+            lastHealthCheck = now
+            Task { @MainActor in session?.checkConnection() }
+        }
     }
 
     override func broadcastPaused() {

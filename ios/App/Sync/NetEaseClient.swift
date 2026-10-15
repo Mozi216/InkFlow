@@ -71,7 +71,8 @@ actor NetEaseClient {
                 url = ((item?["album"] as? [String: Any])?["picUrl"] as? String).flatMap(URL.init(string:))
             }
             guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                  let host = components.host, host.hasSuffix("music.126.net") || host.hasSuffix("music.163.com") else { return nil }
+                  let host = components.host,
+                  host.hasSuffix(".music.126.net") || host.hasSuffix(".music.163.com") else { return nil }
             components.scheme = "https"
             components.queryItems = [URLQueryItem(name: "param", value: "64y64")]
             guard let thumbnailURL = components.url else { return nil }

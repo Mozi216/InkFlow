@@ -79,9 +79,27 @@ import OSLog
         activity = nil
     }
 
+    func checkConnection() {
+        guard started, let activity else { return }
+        guard activity.activityState == .active || activity.activityState == .stale else {
+            started = false
+            onFailure?("歌词连接已结束")
+            Task { await stop() }
+            return
+        }
+        if document == nil {
+            var state = activity.content.state
+            state.anchorDate = Date()
+            publisher.submit(state, to: activity)
+        } else if !clock.running {
+            refresh(force: true)
+        }
+    }
+
     private func received(level: Double, at uptime: Double) {
         guard started, let activity else { return }
         guard activity.activityState == .active || activity.activityState == .stale else {
+            started = false
             onFailure?("歌词连接已结束")
             Task { await stop() }
             return

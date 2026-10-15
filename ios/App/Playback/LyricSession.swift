@@ -26,6 +26,7 @@ import InkFlowCore
     private var document = PreviewLyrics.document
     private var clock = PlaybackClock()
     private var activity: Activity<LyricActivity>?
+    private var activityObservation: Task<Void, Never>?
     private let publisher = LiveActivityPublisher()
     private var playbackDates = PlaybackDates()
     private var artworkData: Data?
@@ -112,6 +113,7 @@ import InkFlowCore
             tick?.cancel()
             state = existing.content.state
             status = state?.message ?? "系统音频连接"
+            observeBroadcast(existing)
         }
     }
 
@@ -225,19 +227,26 @@ import InkFlowCore
                 $0.activityState == .active || $0.activityState == .stale
             }
         }
-        if activity != nil { publish(state); return }
+        if let activity {
+            publish(state)
+            if broadcastPrepared { observeBroadcast(activity) }
+            return
+        }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             status = "请在系统设置中允许实时活动"; return
         }
         do {
             activity = try Activity.request(attributes: LyricActivity(song: "InkFlow"),
                 content: ActivityContent(state: state, staleDate: state.staleDate), pushType: nil)
+            if broadcastPrepared, let activity { observeBroadcast(activity) }
             diagnostics.record("island-start", ["source": preview ? "preview" : "capture"])
         } catch { status = error.localizedDescription; diagnostics.record("island-error", ["message": status]) }
     }
 
     private func retireIsland() async {
         previewBackgroundTask.end()
+        activityObservation?.cancel()
+        activityObservation = nil
         await publisher.cancel()
         // Include activities from an earlier app launch, not just the in-memory reference.
         var existing = Activity<LyricActivity>.activities
@@ -248,7 +257,25 @@ import InkFlowCore
     }
 
     func endIsland() async {
+        broadcastPrepared = false
         await retireIsland()
+    }
+
+    private func observeBroadcast(_ activity: Activity<LyricActivity>) {
+        activityObservation?.cancel()
+        activityObservation = Task { [weak self] in
+            for await update in activity.contentUpdates {
+                guard !Task.isCancelled, let self, broadcastPrepared else { return }
+                state = update.state
+                status = update.state.message ?? "系统音频连接"
+                let now = ProcessInfo.processInfo.systemUptime
+                if now - lastPublicationLog >= 5 {
+                    lastPublicationLog = now
+                    diagnostics.record("broadcast-update-received", ["position": String(update.state.position),
+                        "playing": String(update.state.playing), "status": status])
+                }
+            }
+        }
     }
 
     func sceneChanged(_ phase: ScenePhase) {
@@ -379,6 +406,9 @@ import InkFlowCore
             if let activity {
                 var content = activity.content.state
                 if content.appearance != appearance {
+                    let now = Date()
+                    content.position = content.time(at: now)
+                    content.anchorDate = now
                     content.appearance = appearance
                     content.revision += 1
                     state = content
