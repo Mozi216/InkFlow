@@ -4,7 +4,7 @@ import Foundation
 
 struct LyricActivity: ActivityAttributes {
     enum Source: String, Codable {
-        case preview, capture
+        case preview, capture, broadcast
     }
 
     struct ContentState: Codable, Hashable {
@@ -20,6 +20,9 @@ struct LyricActivity: ActivityAttributes {
         // Optional so an activity created by an older build can still be decoded.
         var source: Source? = nil
         var complete: Bool? = nil
+        var playbackStart: Date? = nil
+        var artwork: Data? = nil
+        var message: String? = nil
 
         var staleDate: Date? {
             if source == .preview && !playing { return nil }
@@ -37,7 +40,7 @@ struct LyricActivity: ActivityAttributes {
         }
 
         func date(for lyricTime: Double) -> Date {
-            anchorDate.addingTimeInterval(lyricTime - position)
+            (playbackStart ?? anchorDate.addingTimeInterval(-position)).addingTimeInterval(lyricTime)
         }
     }
     var song: String

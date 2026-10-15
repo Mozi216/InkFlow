@@ -20,16 +20,17 @@ struct HomeView: View {
                     VStack(spacing: 12) {
                         Button {
                             Task {
-                                if session.capturing { await session.stopCapture() }
+                                if session.capturing || session.broadcastPrepared { await session.stopCapture() }
                                 else { await session.beginCapture() }
                             }
                         } label: {
-                            Label(session.capturing ? "停止连接" : "连接网易云", systemImage: session.capturing ? "stop.fill" : "waveform")
+                            Label(session.capturing || session.broadcastPrepared ? "停止连接" : "连接网易云", systemImage: session.capturing || session.broadcastPrepared ? "stop.fill" : "waveform")
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                         }
                         .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
                         .disabled(session.connecting || session.captureUnavailableReason != nil)
-                        Text(session.captureUnavailableReason ?? "选择整个屏幕以识别播放音频。画面立即丢弃，不保存录音。")
+                        if session.broadcastPrepared { BroadcastConnectionView() }
+                        Text(session.captureUnavailableReason ?? "确认系统音频采集后，切到网易云播放。只识别歌曲，不保存画面或录音；首次匹配需要几秒。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                     if !session.candidates.isEmpty {

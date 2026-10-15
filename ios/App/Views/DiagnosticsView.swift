@@ -10,7 +10,7 @@ struct DiagnosticsView: View {
                 Section("灵动岛验证") {
                     Toggle("系统定时填充遮罩", isOn: $session.appearance.timedMask)
                     Button("结束实时活动") { Task { await session.endIsland() } }
-                    Text("已验证真实灵动岛显示。20 秒演示使用短时后台任务，系统可以提前结束；持续换句与网易云同步尚未通过真机验收。")
+                    Text("20 秒演示已在真机换句，但构建 3 的平滑度未通过。构建 4 调整填充与动画，并加入 iOS 26 音频连接；持续同步仍需真机验收。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("采集") {

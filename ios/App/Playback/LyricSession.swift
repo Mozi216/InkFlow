@@ -19,13 +19,16 @@ import InkFlowCore
     @Published private(set) var level = 0.0
     @Published private(set) var startingIslandPreview = false
     @Published private(set) var previewDuration = PreviewLyrics.duration
+    @Published private(set) var broadcastPrepared = false
     let diagnostics = Diagnostics()
     private let capture = SystemAudioCapture()
     private let catalog = NetEaseClient()
     private var document = PreviewLyrics.document
     private var clock = PlaybackClock()
     private var activity: Activity<LyricActivity>?
-    private var publication: Task<Void, Never>?
+    private let publisher = LiveActivityPublisher()
+    private var playbackDates = PlaybackDates()
+    private var artworkData: Data?
     private var resolveTask: Task<Void, Never>?
     private var tick: Task<Void, Never>?
     private var audioDeadline: Task<Void, Never>?
@@ -42,7 +45,18 @@ import InkFlowCore
     private var shortIslandPreview = false
     private var previewExpired = false
 
-    var captureUnavailableReason: String? { capture.unavailableReason }
+    var usesBroadcast: Bool {
+        if #available(iOS 27.0, *) { return false }
+        return true
+    }
+
+    var captureUnavailableReason: String? {
+        #if targetEnvironment(simulator)
+        return "系统音频连接需要真机；模拟器可测试歌词预览。"
+        #else
+        return usesBroadcast ? nil : capture.unavailableReason
+        #endif
+    }
 
     init() {
         var saved = UserDefaults.standard.data(forKey: "appearance")
@@ -91,13 +105,25 @@ import InkFlowCore
             Task { @MainActor in self?.diagnostics.record("recognition-error", ["message": error]) }
         }
         refresh()
+        if let existing = Activity<LyricActivity>.activities.first(where: { $0.content.state.source == .broadcast }) {
+            activity = existing
+            broadcastPrepared = true
+            preview = false
+            tick?.cancel()
+            state = existing.content.state
+            status = state?.message ?? "系统音频连接"
+        }
     }
 
     func beginCapture() async {
         guard !capturing, !connecting else { return }
-        if let reason = capture.unavailableReason {
+        if let reason = captureUnavailableReason {
             status = reason
             diagnostics.record("capture-unavailable", ["reason": reason])
+            return
+        }
+        if usesBroadcast {
+            await prepareBroadcast()
             return
         }
         connecting = true
@@ -121,7 +147,21 @@ import InkFlowCore
     }
 
     func stopCapture() async {
+        broadcastPrepared = false
         await capture.stop()
+    }
+
+    private func prepareBroadcast() async {
+        await stopCapture()
+        tick?.cancel()
+        preview = false
+        broadcastPrepared = true
+        var content = LyricActivity.ContentState.waiting(appearance: appearance)
+        content.source = .broadcast
+        content.message = "请在 InkFlow 中确认系统音频连接"
+        state = content
+        status = "点击下方系统按钮开始连接"
+        await startIsland()
     }
 
     func startPreview() async {
@@ -198,9 +238,7 @@ import InkFlowCore
 
     private func retireIsland() async {
         previewBackgroundTask.end()
-        publication?.cancel()
-        await publication?.value
-        publication = nil
+        await publisher.cancel()
         // Include activities from an earlier app launch, not just the in-memory reference.
         var existing = Activity<LyricActivity>.activities
         if let activity, !existing.contains(where: { $0.id == activity.id }) { existing.append(activity) }
@@ -217,7 +255,12 @@ import InkFlowCore
         diagnostics.record("scene", ["phase": String(describing: phase),
             "source": preview ? "preview" : "capture",
             "position": String(clock.value(at: ProcessInfo.processInfo.systemUptime))])
-        if phase == .active { refresh() }
+        if phase == .active {
+            if broadcastPrepared, let activity {
+                state = activity.content.state
+                status = state?.message ?? "系统音频连接"
+            } else { refresh() }
+        }
         do { _ = try diagnostics.export() }
         catch { diagnostics.record("diagnostics-write-error", ["message": error.localizedDescription]) }
     }
@@ -285,6 +328,7 @@ import InkFlowCore
             let lyrics = try await catalog.lyrics(for: song)
             guard !Task.isCancelled, generation == requestGeneration, requestKey == matchKey else { return }
             document = lyrics
+            artworkData = nil
             candidates = []
             trackID = song.id
             title = song.title
@@ -293,6 +337,10 @@ import InkFlowCore
             clock.align(position: latest.position, at: latest.uptime, running: !quiet)
             status = lyrics.lines.isEmpty ? "这首歌没有歌词" : (lyrics.precision == .word ? "逐字同步" : "逐行同步 · 填充为估计")
             diagnostics.record("lyrics", ["id": String(song.id), "lines": String(lyrics.lines.count), "precision": lyrics.precision.rawValue])
+            refresh()
+            let artwork = await catalog.artwork(for: song)
+            guard generation == requestGeneration, trackID == song.id else { return }
+            artworkData = artwork
             refresh()
         } catch {
             guard generation == requestGeneration, requestKey == matchKey else { return }
@@ -327,6 +375,18 @@ import InkFlowCore
 
     func refresh() {
         tick?.cancel()
+        if broadcastPrepared {
+            if let activity {
+                var content = activity.content.state
+                if content.appearance != appearance {
+                    content.appearance = appearance
+                    content.revision += 1
+                    state = content
+                    publish(content)
+                }
+            }
+            return
+        }
         guard preview || trackID != nil else { return }
         let now = ProcessInfo.processInfo.systemUptime
         let complete = preview && (clock.hasFinished(at: now) || previewExpired)
@@ -336,6 +396,7 @@ import InkFlowCore
             status = previewExpired ? "系统提前结束了短时预览" : "预览已结束 · 点播放重新开始"
         }
         let position = clock.value(at: now) + appearance.calibration
+        playbackDates.update(clock, at: now, date: Date(), calibration: appearance.calibration)
         guard let selection = document.selection(at: position) else { state = nil; return }
         revision += 1
         var nextLine = selection.next
@@ -343,13 +404,16 @@ import InkFlowCore
         let content = LyricActivity.ContentState(line: selection.line, next: nextLine,
             appearance: appearance, anchorDate: Date(), position: position, playing: clock.running,
             waiting: selection.waiting, repeated: document.lines.filter { $0.text == selection.line.text }.count > 1,
-            revision: revision, source: preview ? .preview : .capture, complete: complete)
+            revision: revision, source: preview ? .preview : .capture, complete: complete,
+            playbackStart: playbackDates.start, artwork: preview ? nil : artworkData)
         state = content
         publish(content)
         guard clock.running else { return }
-        let times = document.lines.flatMap { [$0.start, $0.end] + $0.words.flatMap { [$0.start, $0.end] } }
+        let pages = NativeTypesetting.plan(content).pages.compactMap { $0.first?.token.start }
+        let phrases = CompactLyrics.phrases(selection.line).map(\.start)
+        let times = document.lines.flatMap { [$0.start, $0.vocalEnd] } + pages + phrases + [clock.duration]
         let next = times.filter { $0 > position + 0.01 }.min() ?? position + 0.75
-        let delay = clamped(next - position, 0.15, 0.75)
+        let delay = clamped(next - position, 0.02, 1)
         tick = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
             self?.refresh()
@@ -361,27 +425,18 @@ import InkFlowCore
             if content.complete == true { previewBackgroundTask.end() }
             return
         }
-        do {
-            let bytes = try JSONEncoder().encode(content).count + JSONEncoder().encode(activity.attributes).count
-            guard bytes < 4_000 else {
-                diagnostics.record("island-payload-rejected", ["bytes": String(bytes)])
-                status = "这句歌词超过实时活动容量，需要分段适配"
-                return
-            }
-        } catch { diagnostics.record("island-encoding-error"); return }
-        publication?.cancel()
-        publication = Task {
-            guard !Task.isCancelled else { return }
-            await activity.update(ActivityContent(state: content, staleDate: content.staleDate))
-            guard !Task.isCancelled else { return }
+        let accepted = publisher.submit(content, to: activity) { [weak self] content, elapsed in
+            guard let self else { return }
             if content.complete == true || !content.playing { previewBackgroundTask.end() }
             let now = ProcessInfo.processInfo.systemUptime
             if content.line.start != lastPublishedLineStart || now - lastPublicationLog >= 5 {
                 lastPublishedLineStart = content.line.start
                 lastPublicationLog = now
                 diagnostics.record("island-update-submitted", ["position": String(content.position),
-                    "lineStart": String(content.line.start), "revision": String(content.revision)])
+                    "lineStart": String(content.line.start), "revision": String(content.revision),
+                    "updateMs": String(Int(elapsed * 1000)), "theme": content.appearance.theme])
             }
         }
+        if !accepted { status = "这句歌词超过实时活动容量，需要分段适配" }
     }
 }

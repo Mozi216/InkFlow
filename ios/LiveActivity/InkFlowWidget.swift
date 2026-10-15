@@ -16,12 +16,11 @@ struct InkFlowWidget: Widget {
                     IslandArtwork(state: context.state, stale: context.isStale)
                 }
             } compactLeading: {
-                Image(systemName: context.isStale ? "pause.circle" : "waveform").foregroundStyle(.white)
+                CompactLyricArtwork(state: context.state, stale: context.isStale)
             } compactTrailing: {
-                Text(islandStatus(context.state, stale: context.isStale) ?? context.state.line.text)
-                    .font(.caption2).lineLimit(1).frame(maxWidth: 70)
+                SongArtwork(state: context.state).frame(width: 24, height: 24)
             } minimal: {
-                Image(systemName: context.isStale ? "pause.circle" : "waveform")
+                CompactLyricArtwork(state: context.state, stale: context.isStale, width: 42)
             }
             .keylineTint(.white.opacity(0.35))
             .widgetURL(URL(string: "inkflow://lyrics"))
@@ -30,7 +29,7 @@ struct InkFlowWidget: Widget {
 }
 
 private func islandStatus(_ state: LyricActivity.ContentState, stale: Bool) -> String? {
-    if stale { return state.source == .capture ? "同步已中断" : "预览未更新" }
+    if stale { return state.source == .preview ? "预览未更新" : "同步已中断" }
     if state.complete == true { return "预览结束" }
     return nil
 }
@@ -48,17 +47,18 @@ private struct IslandArtwork: View {
             }
             .frame(maxWidth: .infinity).frame(height: 136)
         } else if state.line.text.isEmpty {
-            Image(systemName: "waveform").foregroundStyle(.secondary)
+            Text(state.message ?? "等待音乐").font(.caption).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity).frame(height: 64)
                 .accessibilityLabel("等待音乐")
         } else {
-            LyricArtwork(state: state, time: state.position, systemTimedFill: true)
-                .animation(reduceMotion ? nil : .linear(duration: 0.7), value: state.revision)
+            ZStack {
+                LyricArtwork(state: state, time: state.position, systemTimedFill: true)
+                    .id(state.line.id)
+                    .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 8)),
+                                            removal: .opacity.combined(with: .offset(y: -6))))
+            }
                 .frame(height: 136)
-                .id(state.line.id)
-                .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 14)),
-                                        removal: .opacity.combined(with: .offset(y: -12))))
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.44), value: state.line.id)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: state.line.id)
                 .overlay(alignment: .bottom) {
                     if state.complete == true {
                         Text("预览结束").font(.caption2).foregroundStyle(.secondary)

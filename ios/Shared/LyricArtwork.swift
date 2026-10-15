@@ -8,14 +8,7 @@ struct LyricArtwork: View {
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @Environment(\.isLuminanceReduced) private var dimmed
 
-    private var ink: Color {
-        switch state.appearance.theme {
-        case "cream": return Color(red: 1, green: 0.91, blue: 0.75)
-        case "rose": return Color(red: 1, green: 0.82, blue: 0.85)
-        case "sage": return Color(red: 0.84, green: 0.93, blue: 0.85)
-        default: return .white
-        }
-    }
+    private var ink: Color { LyricPalette.ink(state.appearance.theme) }
 
     var body: some View {
         let plan = NativeTypesetting.plan(state)
@@ -29,11 +22,14 @@ struct LyricArtwork: View {
                     decorations(plan: plan, poses: poses, depth: ambient.depth)
                     ForEach(poses) { pose in
                         token(pose, style: plan.style)
+                            .animation(nil, value: state.revision)
                             .scaleEffect(pose.scale)
                             .rotationEffect(.degrees(pose.rotation))
-                            .opacity(pose.opacity)
+                            .opacity(systemTimedFill ? (state.waiting ? 0.7 : 1) : pose.opacity)
                             .blur(radius: pose.blur)
                             .position(x: pose.x, y: pose.y)
+                            .animation(systemTimedFill && !reduce ? .linear(duration: 0.95) : nil,
+                                       value: state.revision)
                             .zIndex(pose.hero ? 4 : 2)
                     }
                 }
@@ -41,10 +37,13 @@ struct LyricArtwork: View {
                 .scaleEffect(ambient.scale)
                 .rotationEffect(.degrees(ambient.rotation))
                 .offset(x: ambient.x, y: ambient.y)
+                .animation(systemTimedFill && !reduce ? .linear(duration: 0.95) : nil,
+                           value: state.revision)
                 if state.appearance.rows == 2, plan.style != .columns, let next = state.next {
                     Text(next.text)
                         .font(.system(size: 29, weight: .medium))
                         .foregroundStyle(ink.opacity(0.35))
+                        .contentTransition(.identity)
                         .lineLimit(1).minimumScaleFactor(0.4)
                         .frame(width: plan.width - 100, height: 48)
                         .position(x: plan.width / 2, y: min(plan.height - 36, (poses.map { $0.y + $0.token.font * 0.75 }.max() ?? 100) + 38))
@@ -65,7 +64,7 @@ struct LyricArtwork: View {
         let word = pose.token
         let paper = style == .collage && word.index % 3 == 0
         let font = Font(NativeTypesetting.font(size: word.font, weight: state.appearance.weight, style: style))
-        let glyph = Text(word.token.text).font(font).fixedSize()
+        let glyph = Text(word.token.text).font(font).fixedSize().contentTransition(.identity)
         let color: Color = paper ? .black : ink
         return ZStack {
             if paper {
@@ -73,13 +72,14 @@ struct LyricArtwork: View {
                     .frame(width: word.width + word.font * 0.15, height: word.font * 1.22)
             }
             glyph.foregroundStyle(color.opacity(paper ? 0.34 : 0.2))
+            // Apply the mask after the glow so the system timer cannot flash an unmasked shadow.
             glyph.foregroundStyle(color)
+                .shadow(color: paper ? .clear : ink.opacity(0.65 * min(1, state.appearance.glow)), radius: 8 * state.appearance.glow)
+                .shadow(color: paper ? .clear : ink.opacity(0.28), radius: 20 * state.appearance.glow)
                 .mask(alignment: .leading) {
                     WordFillMask(token: word, state: state, fraction: pose.fill,
                                  timed: systemTimedFill && state.appearance.timedMask && !dimmed)
                 }
-                .shadow(color: paper ? .clear : ink.opacity(0.65 * min(1, state.appearance.glow)), radius: 8 * state.appearance.glow)
-                .shadow(color: paper ? .clear : ink.opacity(0.28), radius: 20 * state.appearance.glow)
         }
         .frame(width: word.width, height: word.font * 1.5)
     }
@@ -94,6 +94,7 @@ struct LyricArtwork: View {
                 Text(state.line.text)
                     .font(.system(size: plan.font * (layer == 0 ? 1.35 : 1.15), weight: .bold))
                     .foregroundStyle(ink.opacity(layer == 0 ? 0.11 : 0.055))
+                    .contentTransition(.identity)
                     .fixedSize().blur(radius: layer == 0 ? 0.6 : 1.2)
                     .rotationEffect(.degrees(layer == 0 ? -4 : 2))
                     .scaleEffect(layer == 0 ? 1.04 + depth * 0.035 : 1)
@@ -121,7 +122,7 @@ struct LyricArtwork: View {
     }
 }
 
-private struct WordFillMask: View {
+struct WordFillMask: View {
     let token: PlacedToken
     let state: LyricActivity.ContentState
     let fraction: Double
@@ -137,11 +138,14 @@ private struct WordFillMask: View {
                         // 系统定时视图的遮罩实验；实际刷新率由 WidgetKit 决定。
                         ProgressView(timerInterval: state.date(for: letter.start)...state.date(for: letter.end), countsDown: false)
                             .labelsHidden().tint(.white)
+                            .contentTransition(.identity)
+                            .transition(.identity)
+                            .animation(nil, value: state.revision)
                             .frame(width: width, height: 4)
                             .scaleEffect(x: 1, y: token.font / 2)
                             .frame(width: width, height: token.font * 1.5)
                             .clipped().background(.black)
-                            .compositingGroup().contrast(100).luminanceToAlpha()
+                            .compositingGroup().luminanceToAlpha()
                     } else {
                         Rectangle().fill(state.position >= letter.start ? .white : .clear)
                             .frame(width: width)

@@ -13,7 +13,7 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: "26.0"
     TARGETED_DEVICE_FAMILY: "1"
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "3"
+    CURRENT_PROJECT_VERSION: "4"
     INKFLOW_BUNDLE_ID: com.inkflow.mobile
     CODE_SIGN_STYLE: Automatic
 targets:
@@ -26,6 +26,8 @@ targets:
     dependencies:
       - package: InkFlowCore
       - target: InkFlowLiveActivity
+        embed: true
+      - target: InkFlowBroadcast
         embed: true
     settings:
       base:
@@ -46,6 +48,24 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(INKFLOW_BUNDLE_ID).lyrics
         INFOPLIST_FILE: LiveActivity/Info.plist
         PROVISIONING_PROFILE_SPECIFIER: $(WIDGET_PROFILE_UUID)
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+  InkFlowBroadcast:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Broadcast
+      - path: Shared/LyricActivity.swift
+      - path: Shared/LiveActivityPublisher.swift
+      - path: App/Sync/AudioRecognition.swift
+      - path: App/Sync/NetEaseClient.swift
+    dependencies:
+      - package: InkFlowCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(INKFLOW_BUNDLE_ID).broadcast
+        INFOPLIST_FILE: Broadcast/Info.plist
+        PROVISIONING_PROFILE_SPECIFIER: $(BROADCAST_PROFILE_UUID)
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
 schemes:

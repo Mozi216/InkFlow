@@ -5,7 +5,10 @@ import UIKit
 enum NativeTypesetting {
     private struct Key: Hashable {
         var line: LyricLine
-        var appearance: Appearance
+        var style: LyricStyle
+        var rows: Int
+        var weight: Double
+        var scale: Double
         var repeated: Bool
     }
     private static var plans: [Key: StagePlan] = [:]
@@ -19,7 +22,8 @@ enum NativeTypesetting {
     }
 
     static func plan(_ state: LyricActivity.ContentState) -> StagePlan {
-        let key = Key(line: state.line, appearance: state.appearance, repeated: state.repeated)
+        let key = Key(line: state.line, style: state.appearance.style, rows: state.appearance.rows,
+                      weight: state.appearance.weight, scale: state.appearance.scale, repeated: state.repeated)
         lock.lock()
         let cached = plans[key]
         lock.unlock()

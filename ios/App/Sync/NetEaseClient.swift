@@ -1,11 +1,14 @@
 import Foundation
 import InkFlowCore
+import ImageIO
+import UniformTypeIdentifiers
 
 struct NetEaseSong: Identifiable, Equatable {
     var id: Int64
     var title: String
     var artist: String
     var duration: Double
+    var artworkURL: URL? = nil
 }
 
 enum LyricsServiceError: LocalizedError {
@@ -54,8 +57,41 @@ actor NetEaseClient {
             guard let id = song["id"] as? NSNumber, let title = song["name"] as? String else { return nil }
             let artists = (song["artists"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: " / ")
             return NetEaseSong(id: id.int64Value, title: title, artist: artists,
-                               duration: (song["duration"] as? Double ?? 0) / 1000)
+                               duration: (song["duration"] as? Double ?? 0) / 1000,
+                               artworkURL: ((song["album"] as? [String: Any])?["picUrl"] as? String).flatMap(URL.init(string:)))
         }
+    }
+
+    func artwork(for song: NetEaseSong) async -> Data? {
+        do {
+            var url = song.artworkURL
+            if url == nil {
+                let detail = try await request("/api/song/detail/", ["id": String(song.id), "ids": "[\(song.id)]"])
+                let item = (detail["songs"] as? [[String: Any]])?.first
+                url = ((item?["album"] as? [String: Any])?["picUrl"] as? String).flatMap(URL.init(string:))
+            }
+            guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                  let host = components.host, host.hasSuffix("music.126.net") || host.hasSuffix("music.163.com") else { return nil }
+            components.scheme = "https"
+            components.queryItems = [URLQueryItem(name: "param", value: "64y64")]
+            guard let thumbnailURL = components.url else { return nil }
+            let (bytes, response) = try await session.bytes(from: thumbnailURL)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            var data = Data()
+            for try await byte in bytes {
+                guard data.count < 300_000 else { return nil }
+                data.append(byte)
+            }
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 32] as CFDictionary) else { return nil }
+            let result = NSMutableData()
+            guard let destination = CGImageDestinationCreateWithData(result, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+            CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.28] as CFDictionary)
+            guard CGImageDestinationFinalize(destination), result.length <= 1_200 else { return nil }
+            return result as Data
+        } catch { return nil }
     }
 
     func lyrics(for song: NetEaseSong) async throws -> LyricDocument {

@@ -19,6 +19,16 @@ public struct PlacedToken: Codable, Hashable, Sendable, Identifiable {
     public var row: Int
     public var index: Int
     public var id: Int { index }
+
+    public init(token: WordToken, x: Double, y: Double, font: Double, width: Double, row: Int, index: Int) {
+        self.token = token
+        self.x = x
+        self.y = y
+        self.font = font
+        self.width = width
+        self.row = row
+        self.index = index
+    }
 }
 
 public struct StagePlan: Codable, Sendable {
