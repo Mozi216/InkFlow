@@ -10,6 +10,8 @@ iLoader 为重签后的主 App 和扩展分配同一 App Group。代码读取各
 
 依据：[Apple 长任务文档](https://developer.apple.com/documentation/backgroundtasks/performing-long-running-tasks-on-ios-and-ipados)、[Apple DTS 对用户主动开始的持续处理会话的解释](https://developer.apple.com/forums/thread/840384)、[iLoader 签名实现](https://github.com/nab138/isideload/blob/main/isideload/src/sideload/sideloader.rs)。旧 APNs 服务代码保留作历史候选，不是当前连接的前置要求。
 
+[构建 9 验证](https://github.com/Mozi216/InkFlow/actions/runs/38819928698) 对应 `9e083fd`：24 项核心测试、10 项旧服务协议测试、6 项签名检查、设备编译和 IPA 结构检查通过。未运行模拟器；旧服务测试不代表本机连接通过。`release/InkFlow-iOS-26-preview9-unsigned.ipa` 的 SHA256 为 `ddd57ea2a6809b4e09967fde4c5a6af0aa9c2a39e7e573fefca08407cbf4d702`。已经 iLoader 免费签名覆盖安装，USB 确认构建 9；iPhone 15 Pro / iOS 26.6.1 启动诊断确认 `sharedGroup: true`。这仅证实主 App 能访问已签名的共享容器，耳机音频、跨进程交换和实际歌词同步仍待播放实测。
+
 ## 构建 8：重做 iOS 26 音频扩展连接
 
 用户确认 pre7 的显示验收仍未通过，优先修复「系统音频扩展未能访问歌词实时活动」。旧方案在三次真机日志中均返回零个活动，在识别开始前退出；本次删除广播扩展直接调用 ActivityKit 的路径，改为共享会话 + 私有 HTTPS 服务 + APNs 更新。
