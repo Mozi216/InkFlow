@@ -47,6 +47,27 @@ final class LyricsTests: XCTestCase {
         XCTAssertEqual(clock.value(at: 1001), 5)
     }
 
+    func testPreviewCompletionCanStopAndReplayFromZero() {
+        var clock = PlaybackClock()
+        clock.duration = 40
+        clock.align(position: 0, at: 100, running: true)
+        XCTAssertFalse(clock.hasFinished(at: 139.9))
+        XCTAssertTrue(clock.hasFinished(at: 140))
+        XCTAssertEqual(clock.value(at: 900), 40)
+        clock.stop(at: 900)
+        XCTAssertFalse(clock.running)
+        XCTAssertTrue(clock.hasFinished(at: 901))
+        clock.align(position: 0, at: 902, running: true)
+        XCTAssertFalse(clock.hasFinished(at: 903))
+        XCTAssertEqual(clock.value(at: 903), 1)
+    }
+
+    func testUnknownDurationDoesNotFinishImmediately() {
+        var clock = PlaybackClock()
+        clock.align(position: 0, at: 100, running: true)
+        XCTAssertFalse(clock.hasFinished(at: 1000))
+    }
+
     func testEnglishWordsStayWholeInEveryStyle() {
         let line = LyricLine("We're still here", start: 0, end: 5)
         for style in LyricStyle.allCases {

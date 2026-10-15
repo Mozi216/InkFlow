@@ -3,6 +3,10 @@ import InkFlowCore
 import Foundation
 
 struct LyricActivity: ActivityAttributes {
+    enum Source: String, Codable {
+        case preview, capture
+    }
+
     struct ContentState: Codable, Hashable {
         var line: LyricLine
         var next: LyricLine?
@@ -13,11 +17,19 @@ struct LyricActivity: ActivityAttributes {
         var waiting: Bool
         var repeated: Bool
         var revision: Int
+        // Optional so an activity created by an older build can still be decoded.
+        var source: Source? = nil
+        var complete: Bool? = nil
+
+        var staleDate: Date? {
+            if source == .preview && !playing { return nil }
+            return anchorDate.addingTimeInterval(12)
+        }
 
         static func waiting(appearance: Appearance) -> Self {
             Self(line: LyricLine("", start: 0, end: 0), next: nil,
                  appearance: appearance, anchorDate: Date(), position: 0,
-                 playing: false, waiting: true, repeated: false, revision: 0)
+                 playing: false, waiting: true, repeated: false, revision: 0, source: .capture)
         }
 
         func time(at date: Date) -> Double {

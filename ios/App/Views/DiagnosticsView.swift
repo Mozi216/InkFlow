@@ -10,10 +10,11 @@ struct DiagnosticsView: View {
                 Section("灵动岛验证") {
                     Toggle("系统定时填充遮罩", isOn: $session.appearance.timedMask)
                     Button("结束实时活动") { Task { await session.endIsland() } }
-                    Text("此版本是原生验证工程。岛内连续填充、动画刷新和后台同步尚待真机验收；App 内预览不能替代这项测试。")
+                    Text("已验证真实灵动岛显示。当前预览在 App 进入后台后可能停止更新；连续换句与网易云同步尚未通过真机验收。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("采集") {
+                    LabeledContent("构建版本", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知")
                     LabeledContent("音频 RMS", value: String(format: "%.6f", session.level))
                     LabeledContent("状态", value: session.status)
                 }

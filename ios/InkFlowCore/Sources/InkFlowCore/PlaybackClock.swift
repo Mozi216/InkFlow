@@ -13,6 +13,10 @@ public struct PlaybackClock: Sendable {
         return clamped(value, 0, duration > 0 ? duration : .greatestFiniteMagnitude)
     }
 
+    public func hasFinished(at uptime: Double) -> Bool {
+        duration > 0 && value(at: uptime) >= duration
+    }
+
     public mutating func align(position: Double, at uptime: Double, running: Bool) {
         guard position.isFinite, uptime.isFinite else { return }
         self.position = max(0, position)

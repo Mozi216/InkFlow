@@ -64,7 +64,8 @@ struct HomeView: View {
                     HStack {
                         Button("预览效果") { Task { await session.startPreview() } }
                         Spacer()
-                        Button("灵动岛测试") { Task { await session.startIsland() } }.disabled(session.state == nil)
+                        Button("从头测试灵动岛") { Task { await session.startIslandPreview() } }
+                            .disabled(session.startingIslandPreview || session.capturing || session.connecting)
                     }.font(.subheadline)
                 }.padding(24)
             }
@@ -97,7 +98,7 @@ struct HomeView: View {
                     Button { session.togglePreviewPlayback() } label: {
                         Image(systemName: session.state?.playing == true ? "pause.fill" : "play.fill")
                     }
-                    Slider(value: Binding(get: { session.state?.position ?? 0 }, set: session.seekPreview), in: 0...40)
+                    Slider(value: Binding(get: { session.state?.position ?? 0 }, set: session.seekPreview), in: 0...PreviewLyrics.duration)
                 }.padding(.horizontal, 20).padding(.bottom, 16)
             }
         }.background(.black, in: RoundedRectangle(cornerRadius: 32))

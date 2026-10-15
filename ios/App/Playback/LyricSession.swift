@@ -17,6 +17,7 @@ import InkFlowCore
     @Published private(set) var state: LyricActivity.ContentState?
     @Published private(set) var candidates: [NetEaseSong] = []
     @Published private(set) var level = 0.0
+    @Published private(set) var startingIslandPreview = false
     let diagnostics = Diagnostics()
     private let capture = SystemAudioCapture()
     private let catalog = NetEaseClient()
@@ -34,6 +35,8 @@ import InkFlowCore
     private var generation = 0
     private var trackID: Int64?
     private var quiet = false
+    private var lastPublicationLog = 0.0
+    private var lastPublishedLineStart: Double?
 
     var captureUnavailableReason: String? { capture.unavailableReason }
 
@@ -47,7 +50,7 @@ import InkFlowCore
         #endif
         saved.normalize()
         appearance = saved
-        clock.duration = 40
+        clock.duration = PreviewLyrics.duration
         clock.align(position: 0, at: ProcessInfo.processInfo.systemUptime, running: true)
         #if DEBUG
         if let index = arguments.firstIndex(of: "--preview-time"), index + 1 < arguments.count,
@@ -123,45 +126,80 @@ import InkFlowCore
         document = PreviewLyrics.document
         title = "InkFlow"
         status = "效果预览"
-        clock.duration = 40
+        clock.duration = PreviewLyrics.duration
         clock.align(position: 0, at: ProcessInfo.processInfo.systemUptime, running: true)
+        diagnostics.record("preview-start")
         refresh()
+    }
+
+    func startIslandPreview() async {
+        guard !startingIslandPreview else { return }
+        startingIslandPreview = true
+        defer { startingIslandPreview = false }
+        await startPreview()
+        await startIsland()
     }
 
     func togglePreviewPlayback() {
         guard preview else { return }
         let now = ProcessInfo.processInfo.systemUptime
-        clock.align(position: clock.value(at: now), at: now, running: !clock.running)
+        let finished = clock.hasFinished(at: now)
+        clock.align(position: finished ? 0 : clock.value(at: now), at: now, running: finished || !clock.running)
+        status = clock.running ? "效果预览" : "预览已暂停"
         refresh()
     }
 
     func seekPreview(_ position: Double) {
         guard preview else { return }
         clock.align(position: position, at: ProcessInfo.processInfo.systemUptime, running: clock.running)
+        status = clock.running ? "效果预览" : "预览已暂停"
         refresh()
     }
 
     func startIsland() async {
         guard let state else { return }
+        if let current = activity, current.activityState != .active && current.activityState != .stale {
+            activity = nil
+        }
+        if activity == nil {
+            activity = Activity<LyricActivity>.activities.first {
+                $0.activityState == .active || $0.activityState == .stale
+            }
+        }
         if activity != nil { publish(state); return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             status = "请在系统设置中允许实时活动"; return
         }
         do {
             activity = try Activity.request(attributes: LyricActivity(song: "InkFlow"),
-                content: ActivityContent(state: state, staleDate: Date().addingTimeInterval(12)), pushType: nil)
+                content: ActivityContent(state: state, staleDate: state.staleDate), pushType: nil)
             diagnostics.record("island-start", ["source": preview ? "preview" : "capture"])
         } catch { status = error.localizedDescription; diagnostics.record("island-error", ["message": status]) }
     }
 
     private func retireIsland() async {
         publication?.cancel()
-        if let activity { await activity.end(nil, dismissalPolicy: .immediate) }
+        await publication?.value
+        publication = nil
+        // Include activities from an earlier app launch, not just the in-memory reference.
+        var existing = Activity<LyricActivity>.activities
+        if let activity, !existing.contains(where: { $0.id == activity.id }) { existing.append(activity) }
         activity = nil
+        for current in existing { await current.end(nil, dismissalPolicy: .immediate) }
+        lastPublishedLineStart = nil
     }
 
     func endIsland() async {
         await retireIsland()
+    }
+
+    func sceneChanged(_ phase: ScenePhase) {
+        diagnostics.record("scene", ["phase": String(describing: phase),
+            "source": preview ? "preview" : "capture",
+            "position": String(clock.value(at: ProcessInfo.processInfo.systemUptime))])
+        if phase == .active { refresh() }
+        do { _ = try diagnostics.export() }
+        catch { diagnostics.record("diagnostics-write-error", ["message": error.localizedDescription]) }
     }
 
     private func received(_ observation: SongMatch) {
@@ -256,6 +294,12 @@ import InkFlowCore
         tick?.cancel()
         guard preview || trackID != nil else { return }
         let now = ProcessInfo.processInfo.systemUptime
+        let complete = preview && clock.hasFinished(at: now)
+        if complete {
+            if clock.running { diagnostics.record("preview-complete") }
+            clock.stop(at: now)
+            status = "预览已结束 · 点播放重新开始"
+        }
         let position = clock.value(at: now) + appearance.calibration
         guard let selection = document.selection(at: position) else { state = nil; return }
         revision += 1
@@ -264,7 +308,7 @@ import InkFlowCore
         let content = LyricActivity.ContentState(line: selection.line, next: nextLine,
             appearance: appearance, anchorDate: Date(), position: position, playing: clock.running,
             waiting: selection.waiting, repeated: document.lines.filter { $0.text == selection.line.text }.count > 1,
-            revision: revision)
+            revision: revision, source: preview ? .preview : .capture, complete: complete)
         state = content
         publish(content)
         guard clock.running else { return }
@@ -289,7 +333,16 @@ import InkFlowCore
         } catch { diagnostics.record("island-encoding-error"); return }
         publication?.cancel()
         publication = Task {
-            await activity.update(ActivityContent(state: content, staleDate: Date().addingTimeInterval(12)))
+            guard !Task.isCancelled else { return }
+            await activity.update(ActivityContent(state: content, staleDate: content.staleDate))
+            guard !Task.isCancelled else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            if content.line.start != lastPublishedLineStart || now - lastPublicationLog >= 5 {
+                lastPublishedLineStart = content.line.start
+                lastPublicationLog = now
+                diagnostics.record("island-update-submitted", ["position": String(content.position),
+                    "lineStart": String(content.line.start), "revision": String(content.revision)])
+            }
         }
     }
 }
