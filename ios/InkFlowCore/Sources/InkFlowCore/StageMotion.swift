@@ -29,7 +29,7 @@ public enum StageMotion {
     }
 
     public static func poses(_ plan: StagePlan, at time: Double, waiting: Bool = false,
-                              reduced: Bool = false, anchored: Bool = false) -> [TokenPose] {
+                              reduced: Bool = false) -> [TokenPose] {
         guard !plan.pages.isEmpty else { return [] }
         let position = waiting ? plan.line.start : min(time, plan.line.end)
         let words = plan.pages[page(in: plan, at: position)]
@@ -41,7 +41,6 @@ public enum StageMotion {
             let basicExtent = word.width / 2 + word.font * 0.04 + 16
             let basicX = clamped(word.x, basicExtent, plan.width - basicExtent)
             var x = basicX, y = word.y, rotation = 0.0, scale = 1.0, blur = 0.0
-            var restX = basicX
             let local = smooth((position - word.token.start + 0.22) / 0.22)
             let arrival = clamped((position - word.token.start + 0.24) / 0.24)
             let eased = reduced ? 1 : arrival * arrival * (3 - 2 * arrival)
@@ -54,7 +53,6 @@ public enum StageMotion {
                     let left = words.map { $0.x - $0.width / 2 }.min() ?? 0
                     let rowLeft = row.map { $0.x - $0.width / 2 }.min() ?? 0
                     x = basicX - rowLeft + left
-                    restX = x
                     arrival = smooth((position - (row.first?.token.start ?? 0) + 0.22) / 0.22)
                 } else {
                     x += sin(phase * .pi * 2 + Double(i) * 0.25) * 3 * motion
@@ -87,9 +85,6 @@ public enum StageMotion {
                 opacity = 0.6 + 0.4 * local
             default: break
             }
-            // The island keeps a stable reading baseline. Motion stays in the
-            // lettering and decorations, not in the position of the entire line.
-            if anchored { x = restX; y = word.y; scale = 1; blur = 0 }
             if reduced { rotation = 0; blur = 0; scale = 1 }
             let radians = abs(rotation) * .pi / 180
             let ex = (word.width * cos(radians) + word.font * 1.5 * sin(radians)) * scale / 2 + 40

@@ -8,9 +8,8 @@ struct DiagnosticsView: View {
         NavigationStack {
             Form {
                 Section("灵动岛验证") {
-                    Toggle("系统定时填充遮罩", isOn: $session.appearance.timedMask)
                     Button("结束实时活动") { Task { await session.endIsland() } }
-                    Text("20 秒演示已在真机换句，但构建 3 的平滑度未通过。构建 4 调整填充与动画，并加入 iOS 26 音频连接；持续同步仍需真机验收。")
+                    Text("预览与灵动岛使用同一份歌词、布局和填充。系统实际调度及流畅度仍需真机验证。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("采集") {

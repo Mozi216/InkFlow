@@ -48,7 +48,6 @@ public struct Appearance: Codable, Hashable, Sendable {
     public var scale = 1.0
     public var theme = "white"
     public var calibration = 0.0
-    public var timedMask = true
     public init() {}
     public mutating func normalize() {
         rows = rows == 1 ? 1 : 2

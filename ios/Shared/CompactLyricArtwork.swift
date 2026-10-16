@@ -30,7 +30,7 @@ struct CompactLyricArtwork: View {
     @Environment(\.isLuminanceReduced) private var dimmed
 
     var body: some View {
-        let position = state.time(at: Date())
+        let position = state.position
         let phrase = CompactLyrics.phrase(state.line, at: position)
         let columns = CompactLyrics.columns(phrase)
         let reduce = reduceMotion || dimmed
@@ -76,7 +76,7 @@ struct CompactLyricArtwork: View {
                 if index > 0 && word.space { Color.clear.frame(width: font * space, height: 1) }
                 let placed = PlacedToken(token: word, x: 0, y: 0, font: font,
                                          width: word.units * font, row: 0, index: index)
-                let fill = fillProgress(at: state.time(at: Date()), start: word.start, end: word.end)
+                let fill = fillProgress(at: state.position, start: word.start, end: word.end)
                 let text = Text(word.text).font(Font(baseFont.withSize(font)))
                     .fixedSize().contentTransition(.identity)
                 ZStack(alignment: .leading) {

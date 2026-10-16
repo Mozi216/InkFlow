@@ -20,6 +20,7 @@ import InkFlowCore
     @Published private(set) var startingIslandPreview = false
     @Published private(set) var previewDuration = PreviewLyrics.duration
     @Published private(set) var broadcastPrepared = false
+    @Published private(set) var displayIsStale = false
     let diagnostics = Diagnostics()
     private let capture = SystemAudioCapture()
     private let catalog = NetEaseClient()
@@ -210,6 +211,7 @@ import InkFlowCore
 
     func startPreview() async {
         await stopCapture()
+        await retireIsland()
         preview = true
         shortIslandPreview = false
         previewExpired = false
@@ -227,17 +229,13 @@ import InkFlowCore
         guard !startingIslandPreview else { return }
         startingIslandPreview = true
         defer { startingIslandPreview = false }
-        await startPreview()
+        if !preview { await startPreview() }
         shortIslandPreview = true
-        previewDuration = PreviewLyrics.islandDuration
-        document = PreviewLyrics.islandDocument
-        clock.duration = previewDuration
-        clock.align(position: 0, at: ProcessInfo.processInfo.systemUptime, running: true)
-        status = "20 秒灵动岛演示"
+        previewExpired = false
+        status = "正在显示当前预览"
         refresh()
-        keepPreviewRunningBriefly()
         await startIsland()
-        if activity == nil { previewBackgroundTask.end() }
+        if activity != nil && clock.running { keepPreviewRunningBriefly() }
     }
 
     func togglePreviewPlayback() {
@@ -260,7 +258,13 @@ import InkFlowCore
     }
 
     func startIsland() async {
-        guard let state else { return }
+        guard let currentState = state else { return }
+        let attributes = LyricActivity(song: "InkFlow")
+        guard let state = LiveActivityPublisher.prepare(currentState, attributes: attributes) else {
+            status = "这句歌词超过实时活动容量，需要分段适配"
+            return
+        }
+        self.state = state
         if let current = activity, current.activityState != .active && current.activityState != .stale {
             activity = nil
         }
@@ -277,7 +281,7 @@ import InkFlowCore
             status = "请在系统设置中允许实时活动"; return
         }
         do {
-            activity = try Activity.request(attributes: LyricActivity(song: "InkFlow"),
+            activity = try Activity.request(attributes: attributes,
                 content: ActivityContent(state: state, staleDate: state.staleDate),
                 pushType: nil)
             diagnostics.record("island-start", ["source": preview ? "preview" : "capture"])
@@ -291,6 +295,7 @@ import InkFlowCore
         var existing = Activity<LyricActivity>.activities
         if let activity, !existing.contains(where: { $0.id == activity.id }) { existing.append(activity) }
         activity = nil
+        displayIsStale = false
         for current in existing { await current.end(nil, dismissalPolicy: .immediate) }
         lastPublishedLineStart = nil
     }
@@ -324,7 +329,6 @@ import InkFlowCore
         capturing = content.connectionActive == true
         status = content.message ?? "正在本机同步"
         if state?.revision != content.revision || state?.relaySession != content.relaySession {
-            state = content
             publish(content)
         }
     }
@@ -334,6 +338,7 @@ import InkFlowCore
             "source": preview ? "preview" : "capture",
             "position": String(clock.value(at: ProcessInfo.processInfo.systemUptime))])
         if phase == .active {
+            displayIsStale = activity?.activityState == .stale
             if broadcastPrepared, let activity {
                 state = activity.content.state
                 status = state?.message ?? "系统音频连接"
@@ -376,7 +381,6 @@ import InkFlowCore
         matchKey = key
         trackID = nil
         let waiting = LyricActivity.ContentState.waiting(appearance: appearance)
-        state = waiting
         publish(waiting)
         tick?.cancel()
         resolveTask?.cancel()
@@ -475,14 +479,13 @@ import InkFlowCore
             waiting: selection.waiting, repeated: document.lines.filter { $0.text == selection.line.text }.count > 1,
             revision: revision, source: preview ? .preview : .capture, complete: complete,
             playbackStart: playbackDates.start, artwork: preview ? nil : artworkData, connectionActive: !preview && capturing)
-        state = content
         publish(content)
         guard clock.running else { return }
         let pages = NativeTypesetting.plan(content).pages.compactMap { $0.first?.token.start }
         let phrases = CompactLyrics.phrases(selection.line).map(\.start)
         let times = document.lines.flatMap { [$0.start, $0.vocalEnd] } + pages + phrases + [clock.duration]
         let next = times.filter { $0 > position + 0.01 }.min() ?? position + 0.75
-        let delay = clamped(next - position, 0.02, 1)
+        let delay = clamped(next - position, 0.02, StageFrame.cadence)
         tick = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
             self?.refresh()
@@ -491,6 +494,8 @@ import InkFlowCore
 
     private func publish(_ content: LyricActivity.ContentState) {
         guard let activity else {
+            state = content
+            displayIsStale = false
             if content.complete == true { previewBackgroundTask.end() }
             return
         }
@@ -506,6 +511,12 @@ import InkFlowCore
                     "updateMs": String(Int(elapsed * 1000)), "theme": content.appearance.theme])
             }
         }
-        if !accepted { status = "这句歌词超过实时活动容量，需要分段适配" }
+        if let accepted {
+            // Preview exactly the payload sent to the island, including artwork fallback.
+            state = accepted
+            displayIsStale = false
+        } else {
+            status = "这句歌词超过实时活动容量，需要分段适配"
+        }
     }
 }

@@ -73,7 +73,7 @@ struct HomeView: View {
                     HStack {
                         Button("预览效果") { Task { await session.startPreview() } }
                         Spacer()
-                        Button("灵动岛演示 · 20 秒") { Task { await session.startIslandPreview() } }
+                        Button("在灵动岛显示") { Task { await session.startIslandPreview() } }
                             .disabled(session.startingIslandPreview || session.capturing || session.connecting)
                     }.font(.subheadline)
                 }.padding(24)
@@ -91,13 +91,8 @@ struct HomeView: View {
     private var artwork: some View {
         VStack(spacing: 0) {
             if let state = session.state {
-                TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !state.playing)) { context in
-                    LyricArtwork(state: state, time: state.time(at: context.date), systemTimedFill: false)
-                        .id(state.line.id)
-                        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 14)),
-                                                removal: .opacity.combined(with: .offset(y: -12))))
-                        .animation(.easeOut(duration: 0.44), value: state.line.id)
-                }.frame(height: 180)
+                IslandPreview(state: state, stale: session.displayIsStale)
+                    .padding(.top, 12)
             } else {
                 Image(systemName: "waveform").font(.largeTitle).foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity).frame(height: 180)

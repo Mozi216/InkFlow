@@ -66,20 +66,4 @@ final class MotionParityTests: XCTestCase {
         }
     }
 
-    func testIslandKeepsWordPositionsWhileFillAdvances() {
-        for text in ["灯光落下", "Stay with me"] {
-            for style in [LyricStyle.flow, .columns, .scatter, .collage, .cinema] {
-                let plan = StageLayout.make(line: LyricLine(text, start: 0, end: 8), style: style)
-                let first = StageMotion.poses(plan, at: 0.5, anchored: true)
-                let later = StageMotion.poses(plan, at: 6, anchored: true)
-                XCTAssertEqual(first.map(\.id), later.map(\.id))
-                for (a, b) in zip(first, later) {
-                    XCTAssertEqual(a.x, b.x, accuracy: 0.00001)
-                    XCTAssertEqual(a.y, b.y, accuracy: 0.00001)
-                    XCTAssertEqual(a.scale, b.scale, accuracy: 0.00001)
-                }
-                XCTAssertGreaterThan(later.reduce(0) { $0 + $1.fill }, first.reduce(0) { $0 + $1.fill })
-            }
-        }
-    }
 }

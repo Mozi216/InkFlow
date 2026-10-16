@@ -3,8 +3,6 @@ import InkFlowCore
 
 struct LyricArtwork: View {
     let state: LyricActivity.ContentState
-    let time: Double
-    let systemTimedFill: Bool
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @Environment(\.isLuminanceReduced) private var dimmed
 
@@ -13,13 +11,10 @@ struct LyricArtwork: View {
     var body: some View {
         let plan = NativeTypesetting.plan(state)
         let reduce = reducedMotion || dimmed
-        let poses = StageMotion.poses(plan, at: time, waiting: state.waiting,
-                                      reduced: reduce, anchored: systemTimedFill)
-        // Give the compositor a destination beyond the next heartbeat. Timer masks
-        // still use the actual lyric clock; only the decorative motion looks ahead.
-        let moving = state.playing && !reduce
-        let motionTime = time + (systemTimedFill && moving ? 1.25 : 0)
-        let ambient = StageMotion.ambient(plan.style, at: motionTime, reduced: reduce)
+        let frame = StageFrame(plan: plan, position: state.position, waiting: state.waiting, reduced: reduce)
+        let poses = frame.poses
+        let ambient = frame.ambient
+        let moving = state.playing && !state.waiting && !reduce
         GeometryReader { geometry in
             let factor = min(geometry.size.width / plan.width, geometry.size.height / plan.height)
             ZStack {
@@ -29,20 +24,20 @@ struct LyricArtwork: View {
                         token(pose, style: plan.style)
                             .animation(nil, value: state.revision)
                             .scaleEffect(pose.scale)
-                            .rotationEffect(.degrees(pose.rotation + (systemTimedFill ? ambient.rotation : 0)))
-                            .opacity(systemTimedFill ? (state.waiting ? 0.7 : 1) : pose.opacity)
+                            .rotationEffect(.degrees(pose.rotation))
+                            .opacity(pose.opacity)
                             .blur(radius: pose.blur)
                             .position(x: pose.x, y: pose.y)
-                            .animation(systemTimedFill && moving ? .linear(duration: 1.25) : nil,
+                            .animation(moving ? .linear(duration: StageFrame.cadence) : nil,
                                        value: state.revision)
                             .zIndex(pose.hero ? 4 : 2)
                     }
                 }
                 .frame(width: plan.width, height: plan.height)
-                .scaleEffect(systemTimedFill ? 1 : ambient.scale)
-                .rotationEffect(.degrees(systemTimedFill ? 0 : ambient.rotation))
-                .offset(x: systemTimedFill ? 0 : ambient.x, y: systemTimedFill ? 0 : ambient.y)
-                .animation(systemTimedFill && moving ? .linear(duration: 1.25) : nil,
+                .scaleEffect(ambient.scale)
+                .rotationEffect(.degrees(ambient.rotation))
+                .offset(x: ambient.x, y: ambient.y)
+                .animation(moving ? .linear(duration: StageFrame.cadence) : nil,
                            value: state.revision)
                 if state.appearance.rows == 2, plan.style != .columns, let next = state.next {
                     Text(next.text)
@@ -51,7 +46,8 @@ struct LyricArtwork: View {
                         .contentTransition(.identity)
                         .lineLimit(1).minimumScaleFactor(0.4)
                         .frame(width: plan.width - 100, height: 48)
-                        .position(x: plan.width / 2, y: min(plan.height - 36, (poses.map { $0.y + $0.token.font * 0.75 }.max() ?? 100) + 38))
+                        .position(x: plan.width / 2, y: min(plan.height - 36,
+                            (poses.map { $0.token.y + $0.token.font * 0.75 }.max() ?? 100) + 38))
                         .id(next.id)
                         .transition(.opacity.combined(with: .offset(y: 16)))
                 }
@@ -79,8 +75,7 @@ struct LyricArtwork: View {
             glyph.foregroundStyle(color.opacity(paper ? 0.34 : 0.2))
             glyph.foregroundStyle(color)
                 .mask(alignment: .leading) {
-                    WordFillMask(token: word, state: state, fraction: pose.fill,
-                                 timed: systemTimedFill && state.appearance.timedMask && !dimmed)
+                    WordFillMask(token: word, state: state, fraction: pose.fill, timed: !dimmed)
                 }
                 .shadow(color: paper ? .clear : ink.opacity(0.65 * min(1, state.appearance.glow)), radius: 8 * state.appearance.glow)
                 .shadow(color: paper ? .clear : ink.opacity(0.28), radius: 20 * state.appearance.glow)

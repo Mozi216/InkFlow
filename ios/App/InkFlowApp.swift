@@ -9,6 +9,8 @@ struct InkFlowApp: App {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--layout-check") {
                 LayoutCheckView()
+            } else if ProcessInfo.processInfo.arguments.contains("--scene-check") {
+                SceneCheckView()
             } else { home }
             #else
             home

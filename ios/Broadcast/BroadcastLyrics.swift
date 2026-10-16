@@ -201,7 +201,7 @@ import OSLog
         let clockChanged = lastState.map {
             $0.playing != clock.running || abs($0.time(at: Date()) - position) > 0.3 || $0.appearance != appearance
         } ?? true
-        guard changed || (force && clockChanged) || now - lastPublish >= 0.5 else { return }
+        guard changed || (force && clockChanged) || now - lastPublish >= StageFrame.cadence else { return }
         dates.update(clock, at: now, date: Date(), calibration: appearance.calibration)
         revision += 1
         var next = selection.next
