@@ -28,6 +28,7 @@ struct IslandLyricView: View {
         }
         .frame(maxWidth: Self.width)
         .frame(height: Self.height)
+        .clipped(antialiased: true)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.32), value: state.line.id)
         .overlay(alignment: .bottom) {
             if state.complete == true {
