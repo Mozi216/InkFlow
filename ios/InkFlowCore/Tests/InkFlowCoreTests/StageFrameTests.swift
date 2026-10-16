@@ -30,7 +30,7 @@ final class StageFrameTests: XCTestCase {
         XCTAssertEqual(delayed.page, 0)
         XCTAssertEqual(before.poses.map(\.id), delayed.poses.map(\.id))
         XCTAssertTrue(delayed.poses.allSatisfy { $0.fill == 0 && $0.blur == 0 })
-        XCTAssertEqual(before.ambient.rotation, delayed.ambient.rotation)
+        XCTAssertNotEqual(before.ambient.rotation, delayed.ambient.rotation)
     }
 
     func testPublishedSceneSurvivesSerializationWithoutChangingComposition() throws {

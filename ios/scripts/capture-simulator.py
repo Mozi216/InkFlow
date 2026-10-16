@@ -28,17 +28,14 @@ if "--boot-only" in sys.argv:
 run("bootstatus", device["udid"], "-b", timeout=480)
 run("install", device["udid"], str(root / "build/DerivedData/Build/Products/Debug-iphonesimulator/InkFlow.app"))
 for style in ("flow", "columns", "scatter", "collage", "cinema", "mv"):
-    subprocess.run(["xcrun", "simctl", "terminate", device["udid"], "com.inkflow.mobile"], capture_output=True, timeout=30)
-    run("launch", device["udid"], "com.inkflow.mobile", "--preview-style", style,
+    run("launch", "--terminate-running-process", device["udid"], "com.inkflow.mobile", "--preview-style", style,
         "--preview-time", "1.65", "--preview-paused")
     time.sleep(2)
     run("io", device["udid"], "screenshot", str(output / f"app-{style}.png"))
-    subprocess.run(["xcrun", "simctl", "terminate", device["udid"], "com.inkflow.mobile"], capture_output=True, timeout=30)
-    run("launch", device["udid"], "com.inkflow.mobile", "--scene-check", "--preview-style", style)
+    run("launch", "--terminate-running-process", device["udid"], "com.inkflow.mobile", "--scene-check", "--preview-style", style)
     time.sleep(2)
     run("io", device["udid"], "screenshot", str(output / f"shared-scene-{style}.png"))
-subprocess.run(["xcrun", "simctl", "terminate", device["udid"], "com.inkflow.mobile"], capture_output=True, timeout=30)
-run("launch", device["udid"], "com.inkflow.mobile", "--layout-check")
+run("launch", "--terminate-running-process", device["udid"], "com.inkflow.mobile", "--layout-check")
 time.sleep(2)
 run("io", device["udid"], "screenshot", str(output / "compact-and-connection.png"))
 (output / "scope.json").write_text(json.dumps({"surface": "SwiftUI app preview",

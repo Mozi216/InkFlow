@@ -14,7 +14,7 @@ struct LyricArtwork: View {
         let frame = StageFrame(plan: plan, state: state, reduced: reduce)
         let poses = frame.poses
         let ambient = frame.ambient
-        let moving = state.playing && !state.waiting && !reduce
+        let moving = state.playing && !reduce
         GeometryReader { geometry in
             let factor = min(geometry.size.width / plan.width, geometry.size.height / plan.height)
             ZStack {

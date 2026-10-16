@@ -11,6 +11,7 @@ public struct StageFrame {
         let time = state.waiting ? plan.line.start : state.position
         page = StageMotion.page(in: plan, at: min(time, plan.line.end))
         poses = StageMotion.poses(plan, at: time, waiting: state.waiting, reduced: reduced)
-        ambient = StageMotion.ambient(plan.style, at: time, reduced: reduced)
+        // Waiting stops the fill, not the scene's ambient movement.
+        ambient = StageMotion.ambient(plan.style, at: state.position, reduced: reduced)
     }
 }
