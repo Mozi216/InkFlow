@@ -7,10 +7,10 @@ public struct StageFrame {
     public let ambient: AmbientPose
     public let page: Int
 
-    public init(plan: StagePlan, position: Double, waiting: Bool, reduced: Bool = false) {
-        let time = waiting ? plan.line.start : position
+    public init(plan: StagePlan, state: LyricSnapshot, reduced: Bool = false) {
+        let time = state.waiting ? plan.line.start : state.position
         page = StageMotion.page(in: plan, at: min(time, plan.line.end))
-        poses = StageMotion.poses(plan, at: time, waiting: waiting, reduced: reduced)
+        poses = StageMotion.poses(plan, at: time, waiting: state.waiting, reduced: reduced)
         ambient = StageMotion.ambient(plan.style, at: time, reduced: reduced)
     }
 }

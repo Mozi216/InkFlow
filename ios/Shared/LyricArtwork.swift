@@ -11,7 +11,7 @@ struct LyricArtwork: View {
     var body: some View {
         let plan = NativeTypesetting.plan(state)
         let reduce = reducedMotion || dimmed
-        let frame = StageFrame(plan: plan, position: state.position, waiting: state.waiting, reduced: reduce)
+        let frame = StageFrame(plan: plan, state: state, reduced: reduce)
         let poses = frame.poses
         let ambient = frame.ambient
         let moving = state.playing && !state.waiting && !reduce
