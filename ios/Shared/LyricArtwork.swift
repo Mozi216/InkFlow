@@ -136,6 +136,7 @@ struct WordFillMask: View {
                     if letter.end > letter.start {
                         // 系统定时视图的遮罩实验；实际刷新率由 WidgetKit 决定。
                         ProgressView(timerInterval: state.date(for: letter.start)...state.date(for: letter.end), countsDown: false)
+                            .progressViewStyle(.linear)
                             .labelsHidden().tint(.white)
                             .contentTransition(.identity)
                             .transition(.identity)
