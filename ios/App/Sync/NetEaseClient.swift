@@ -12,12 +12,14 @@ struct NetEaseSong: Identifiable, Equatable {
 }
 
 enum LyricsServiceError: LocalizedError {
-    case response, tooLarge, noCandidate
+    case response, tooLarge, noCandidate, unavailable, instrumental
     var errorDescription: String? {
         switch self {
         case .response: return "网易云暂时没有返回歌词"
         case .tooLarge: return "歌词响应超过大小限制"
         case .noCandidate: return "未找到对应版本的歌曲"
+        case .unavailable: return "暂未取得这首歌的歌词，稍后自动重试"
+        case .instrumental: return "歌词源将此版本标为纯音乐，稍后重新核对"
         }
     }
 }
@@ -25,9 +27,11 @@ enum LyricsServiceError: LocalizedError {
 actor NetEaseClient {
     private let session: URLSession
     private var cache: [Int64: LyricDocument] = [:]
+    private var retryAfter: [Int64: (time: Double, error: LyricsServiceError)] = [:]
     init() {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 12
+        config.timeoutIntervalForRequest = 5
+        config.timeoutIntervalForResource = 6
         config.httpCookieStorage = nil
         session = URLSession(configuration: config)
     }
@@ -97,14 +101,34 @@ actor NetEaseClient {
 
     func lyrics(for song: NetEaseSong) async throws -> LyricDocument {
         if let cached = cache[song.id] { return cached }
-        let data = try await request("/api/song/lyric/v1", ["id": String(song.id), "cp": "false", "lv": "-1",
-            "tv": "-1", "rv": "-1", "kv": "-1", "yv": "-1", "ytv": "-1", "yrv": "-1"])
-        let yrc = (data["yrc"] as? [String: Any])?["lyric"] as? String
-        let lrc = (data["lrc"] as? [String: Any])?["lyric"] as? String
-        let document = LyricParser.parse(yrc: yrc, lrc: lrc, duration: song.duration)
-        if cache.count >= 12 { cache.removeAll(keepingCapacity: true) }
-        cache[song.id] = document
-        return document
+        if let retry = retryAfter[song.id], ProcessInfo.processInfo.systemUptime < retry.time { throw retry.error }
+        let query = ["id": String(song.id), "cp": "false", "lv": "-1", "tv": "-1", "rv": "-1",
+                     "kv": "-1", "yv": "-1", "ytv": "-1", "yrv": "-1"]
+        var instrumental = false
+        for path in ["/api/song/lyric/v1", "/api/song/lyric"] {
+            do {
+                let data = try await request(path, query)
+                try Task.checkCancellation()
+                let result = LyricServiceResult(
+                    yrc: (data["yrc"] as? [String: Any])?["lyric"] as? String,
+                    lrc: (data["lrc"] as? [String: Any])?["lyric"] as? String,
+                    pureMusic: data["pureMusic"] as? Bool == true, duration: song.duration)
+                if result.availability == .available {
+                    if cache.count >= 12 { cache.removeAll(keepingCapacity: true) }
+                    cache[song.id] = result.document
+                    retryAfter[song.id] = nil
+                    return result.document
+                }
+                instrumental = instrumental || result.availability == .instrumental
+            } catch {
+                try Task.checkCancellation()
+                // An empty or unavailable endpoint can still have lyrics on the other endpoint.
+            }
+        }
+        let error: LyricsServiceError = instrumental ? .instrumental : .unavailable
+        if retryAfter.count >= 24 { retryAfter.removeAll(keepingCapacity: true) }
+        retryAfter[song.id] = (ProcessInfo.processInfo.systemUptime + (instrumental ? 30 : 8), error)
+        throw error
     }
 
     nonisolated static func bestMatch(_ songs: [NetEaseSong], title: String, artist: String) -> NetEaseSong? {

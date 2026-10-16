@@ -110,16 +110,25 @@ import InkFlowCore
         capture.recognition.onMatch = { [weak self] match in
             Task { @MainActor in self?.received(match) }
         }
+        capture.recognition.onUncertain = { [weak self] message in
+            Task { @MainActor in self?.invalidateRecognition(message) }
+        }
         capture.recognition.onLevel = { [weak self] level, uptime in
             Task { @MainActor in self?.received(level: level, uptime: uptime) }
         }
         capture.recognition.onError = { [weak self] error in
-            Task { @MainActor in self?.diagnostics.record("recognition-error", ["message": error]) }
+            Task { @MainActor in
+                guard let self else { return }
+                self.diagnostics.record("recognition-error", ["message": error])
+                if self.capturing, self.trackID == nil, self.matchKey.isEmpty {
+                    self.publishCaptureMessage("识曲暂不可用：" + error)
+                }
+            }
         }
         capture.recognition.onStatus = { [weak self] message in
             Task { @MainActor in
-                guard let self, self.capturing, self.trackID == nil else { return }
-                self.status = message
+                guard let self, self.capturing, self.trackID == nil, self.matchKey.isEmpty else { return }
+                self.publishCaptureMessage(message)
             }
         }
         refresh()
@@ -380,16 +389,39 @@ import InkFlowCore
         guard key != matchKey else { return }
         matchKey = key
         trackID = nil
-        let waiting = LyricActivity.ContentState.waiting(appearance: appearance)
-        publish(waiting)
+        publishCaptureMessage("正在获取歌词")
         tick?.cancel()
         resolveTask?.cancel()
         let requestGeneration = generation
-        status = "正在获取歌词"
         resolveTask = Task {
             guard !Task.isCancelled, generation == requestGeneration, matchKey == key else { return }
             await select(observation.song)
         }
+    }
+
+    private func invalidateRecognition(_ message: String) {
+        guard capturing, !preview else { return }
+        generation += 1
+        resolveTask?.cancel()
+        tick?.cancel()
+        clock.stop(at: ProcessInfo.processInfo.systemUptime)
+        match = nil
+        matchKey = ""
+        trackID = nil
+        artworkData = nil
+        document = LyricDocument(lines: [], precision: .line)
+        title = "InkFlow"
+        publishCaptureMessage(message)
+        diagnostics.record("recognition-unconfirmed", ["reason": message])
+    }
+
+    private func publishCaptureMessage(_ message: String) {
+        status = message
+        var content = LyricActivity.ContentState.waiting(appearance: appearance)
+        content.source = .capture
+        content.connectionActive = true
+        content.message = message
+        publish(content)
     }
 
     func select(_ song: NetEaseSong) async {
@@ -416,9 +448,9 @@ import InkFlowCore
             artworkData = artwork
             refresh()
         } catch {
-            guard generation == requestGeneration, requestKey == matchKey else { return }
+            guard !Task.isCancelled, generation == requestGeneration, requestKey == matchKey else { return }
             matchKey = ""
-            status = error.localizedDescription
+            publishCaptureMessage(error.localizedDescription)
         }
     }
 

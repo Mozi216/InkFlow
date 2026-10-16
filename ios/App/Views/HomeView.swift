@@ -30,14 +30,14 @@ struct HomeView: View {
                         .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
                         .disabled(session.connecting || session.captureUnavailableReason != nil)
                         if session.broadcastPrepared && !session.capturing { BroadcastConnectionView() }
-                        Text(session.captureUnavailableReason ?? "确认系统音频采集后，切到网易云播放。声音在本机计算指纹，仅把指纹发送给网易云识曲；不上传画面或原始录音。先采样 6 秒，未匹配时自动延长。")
+                        Text(session.captureUnavailableReason ?? "需确认系统音频采集。先采样 6 秒，再用后续片段核对歌曲与进度；版本冲突时暂停显示歌词。仅发送音频指纹，不上传画面或原始录音。")
                             .font(.footnote).foregroundStyle(.secondary)
                         if session.usesBroadcast {
                             Text("本机同步每次最多分析 30 分钟系统音频，支持耳机。系统会显示后台任务，可随时停止；无需配置推送服务。歌曲识别及歌词查询仍需联网。")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
-                        DisclosureGroup("跟随网易云打开") {
-                            Text("在快捷指令中建立「网易云被打开时」自动化，添加 InkFlow 的「准备网易云歌词」操作。它会打开连接入口，仍需确认系统音频采集；连接期间换歌会自动识别。")
+                        DisclosureGroup("快捷指令入口") {
+                            Text("「准备网易云歌词」只能打开连接入口，仍需确认系统音频采集。它不能监听网易云的播放或切歌事件，也不是免确认的自动同步。")
                                 .font(.footnote).foregroundStyle(.secondary).padding(.top, 8)
                         }.font(.subheadline)
                     }

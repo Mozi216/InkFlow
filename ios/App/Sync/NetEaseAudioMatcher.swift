@@ -1,14 +1,20 @@
 import Foundation
 import NativeFingerprint
 import OSLog
+import InkFlowCore
 
 struct SongMatch {
     let song: NetEaseSong
     // The service reports the beginning of the audio window, not the response time.
     let position: Double
     let uptime: Double
+    var artistIDs: [Int64] = []
     var title: String { song.title }
     var artist: String { song.artist }
+    var candidate: RecognitionCandidate {
+        RecognitionCandidate(id: song.id, title: title, artist: artist, artistIDs: artistIDs,
+                             duration: song.duration, position: position)
+    }
 }
 
 private enum AudioMatchError: LocalizedError {
@@ -60,21 +66,20 @@ actor NetEaseAudioMatcher {
     private let session: URLSession
     private let logger = Logger(subsystem: "com.inkflow.mobile", category: "AudioMatch")
     private let sessionID = UUID().uuidString
-    private var preferredID: Int64?
 
     init() {
         let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 12
+        config.timeoutIntervalForRequest = 4
+        config.timeoutIntervalForResource = 5
         config.httpCookieStorage = nil
         session = URLSession(configuration: config)
     }
 
-    func match(pcm: Data, startUptime: Double) async throws -> SongMatch? {
+    func match(pcm: Data, startUptime: Double) async throws -> [SongMatch] {
         let began = ProcessInfo.processInfo.systemUptime
         let raw = try await fingerprint.calculate(pcm)
         try Task.checkCancellation()
-        if raw.isEmpty { return nil }
+        if raw.isEmpty { return [] }
         let calculated = ProcessInfo.processInfo.systemUptime
         var body = URLComponents()
         let duration = pcm.count / (8_000 * MemoryLayout<Float>.size)
@@ -102,16 +107,18 @@ actor NetEaseAudioMatcher {
         let candidates = (decoded.data?.result ?? []).filter {
             $0.startTime >= 0 && $0.startTime.isFinite && $0.song.duration > $0.startTime
         }
-        guard let found = candidates.first(where: { $0.song.id == preferredID }) ?? candidates.first else {
+        guard !candidates.isEmpty else {
             logger.info("No match; fingerprint \(calculated - began) s; reason \(decoded.data?.noMatchReason ?? -1)")
-            return nil
+            return []
         }
-        preferredID = found.song.id
-        let song = NetEaseSong(id: found.song.id, title: found.song.name,
-            artist: found.song.artists.map(\.name).joined(separator: " / "), duration: found.song.duration / 1000,
-            artworkURL: (found.song.album?.picUrl).flatMap(URL.init(string:)))
-        logger.info("Matched \(song.title, privacy: .public) / \(song.artist, privacy: .public); id \(song.id); offset \(found.startTime / 1000); fingerprint \(calculated - began) s; request \(ProcessInfo.processInfo.systemUptime - calculated) s")
-        return SongMatch(song: song, position: found.startTime / 1000, uptime: startUptime)
+        logger.info("Received \(candidates.count) candidates; fingerprint \(calculated - began) s; request \(ProcessInfo.processInfo.systemUptime - calculated) s")
+        return candidates.map { found in
+            let song = NetEaseSong(id: found.song.id, title: found.song.name,
+                artist: found.song.artists.map(\.name).joined(separator: " / "), duration: found.song.duration / 1000,
+                artworkURL: (found.song.album?.picUrl).flatMap(URL.init(string:)))
+            return SongMatch(song: song, position: found.startTime / 1000, uptime: startUptime,
+                             artistIDs: found.song.artists.compactMap(\.id))
+        }
     }
 
     private struct MatchResponse: Decodable {
@@ -132,7 +139,7 @@ actor NetEaseAudioMatcher {
             let duration: Double
             let album: Album?
         }
-        struct Artist: Decodable { let name: String }
+        struct Artist: Decodable { let name: String; let id: Int64? }
         struct Album: Decodable { let picUrl: String? }
     }
 }

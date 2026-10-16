@@ -47,6 +47,9 @@ import OSLog
         recognition.onMatch = { [weak self] observation in
             Task { @MainActor in self?.matched(observation) }
         }
+        recognition.onUncertain = { [weak self] message in
+            Task { @MainActor in self?.invalidateRecognition(message) }
+        }
         recognition.onLevel = { [weak self] level, uptime in
             Task { @MainActor in self?.received(level: level, at: uptime) }
         }
@@ -188,6 +191,21 @@ import OSLog
                 showMessage(error.localizedDescription)
             }
         }
+    }
+
+    private func invalidateRecognition(_ message: String) {
+        guard started, !paused else { return }
+        generation += 1
+        resolve?.cancel()
+        resolve = nil
+        clock.stop(at: ProcessInfo.processInfo.systemUptime)
+        document = nil
+        artwork = nil
+        songKey = ""
+        lastLineID = nil
+        lastPhraseID = nil
+        showMessage(message)
+        logger.info("Recognition unconfirmed: \(message, privacy: .public)")
     }
 
     private func refresh(force: Bool = false) {

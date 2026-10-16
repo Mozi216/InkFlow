@@ -1,5 +1,6 @@
 import AVFoundation
 import OSLog
+import InkFlowCore
 
 final class AudioRecognition {
     let queue = DispatchQueue(label: "InkFlow.audio", qos: .userInitiated)
@@ -8,6 +9,7 @@ final class AudioRecognition {
     var onError: ((String) -> Void)?
     var onProgress: ((Double) -> Void)?
     var onStatus: ((String) -> Void)?
+    var onUncertain: ((String) -> Void)?
     private let logger = Logger(subsystem: "com.inkflow.mobile", category: "AudioInput")
     private let matcher = NetEaseAudioMatcher()
     private var request: Task<Void, Never>?
@@ -16,6 +18,11 @@ final class AudioRecognition {
     private var audio: [Float] = []
     private let windowFrames = 96_000
     private var windowSeconds = 6
+    private var missedWindows = 0
+    private var serviceFailures = 0
+    private var tracker = RecognitionTracker()
+    private var hasPublishedMatch = false
+    private var lastAcceptedEnd = 0.0
     private var lastStatus = ""
     private var nextAttempt = 0.0
     private var lastMeter = 0.0
@@ -30,6 +37,7 @@ final class AudioRecognition {
             self.clearWindow()
             self.converter = nil
             self.lastBuffer = 0
+            self.lastStatus = ""
             self.active = true
         }
     }
@@ -49,12 +57,23 @@ final class AudioRecognition {
         audio.removeAll(keepingCapacity: true)
         nextAttempt = 0
         windowSeconds = 6
+        missedWindows = 0
+        serviceFailures = 0
+        tracker.reset()
     }
 
     private func report(_ message: String) {
         guard message != lastStatus else { return }
         lastStatus = message
         onStatus?(message)
+    }
+
+    private func invalidate(_ message: String) {
+        if hasPublishedMatch {
+            hasPublishedMatch = false
+            onUncertain?(message)
+        }
+        report(message)
     }
 
     // Both capture drivers call this on queue. Only an in-memory audio window is kept.
@@ -101,6 +120,10 @@ final class AudioRecognition {
         }
         lastBuffer = now
         if level > 0.00001 { lastSound = now }
+        if now - lastSound < 1.5, hasPublishedMatch, now - lastAcceptedEnd > 8 {
+            _ = tracker.expire(at: now)
+            invalidate("当前歌曲尚未确认，正在重新识别")
+        }
         if now - lastSound > 1.5 {
             if !audio.isEmpty || request != nil { clearWindow() }
             report("音频通道已连接，目前收到的是静音")
@@ -118,22 +141,43 @@ final class AudioRecognition {
         let pcm = window.withUnsafeBytes { Data($0) }
         let startUptime = now - Double(windowSeconds)
         let expectedGeneration = generation
-        nextAttempt = now + 4
+        nextAttempt = now + 2
         report("已收到声音，正在匹配歌曲")
         request = Task { [weak self, matcher] in
             do {
-                let match = try await matcher.match(pcm: pcm, startUptime: startUptime)
+                let matches = try await matcher.match(pcm: pcm, startUptime: startUptime)
                 try Task.checkCancellation()
                 self?.queue.async { [weak self] in
                     guard let self, self.active, self.generation == expectedGeneration else { return }
                     self.request = nil
-                    if let match {
+                    self.serviceFailures = 0
+                    let decision = self.tracker.observe(matches.map(\.candidate), start: startUptime,
+                        duration: Double(pcm.count) / 32_000, now: ProcessInfo.processInfo.systemUptime)
+                    switch decision {
+                    case .accepted(let candidate):
+                        guard let match = matches.first(where: { $0.song.id == candidate.id }) else { return }
                         self.windowSeconds = 6
+                        self.missedWindows = 0
+                        self.hasPublishedMatch = true
+                        self.lastAcceptedEnd = startUptime + Double(pcm.count) / 32_000
                         self.report("已识别：" + match.title)
+                        self.logger.info("Confirmed id \(match.song.id), position \(match.position) from advancing audio windows")
                         self.onMatch?(match)
-                    } else {
-                        self.windowSeconds = min(12, self.windowSeconds + 3)
-                        self.report("已收到声音，尚未匹配到歌曲，继续识别")
+                    case .confirming:
+                        self.windowSeconds = 6
+                        self.invalidate("正在核对歌曲与播放位置")
+                    case .ambiguous:
+                        self.missedWindows += 1
+                        self.windowSeconds = self.missedWindows.isMultiple(of: 2) ? 6 : 9
+                        self.invalidate("识曲结果存在不同版本，暂不显示未确认歌词")
+                    case .unmatched:
+                        self.missedWindows += 1
+                        // Always return to the recent six seconds after a longer probe.
+                        self.windowSeconds = self.missedWindows.isMultiple(of: 2) ? 6 : min(12, 6 + self.missedWindows * 3)
+                        if self.missedWindows >= 2 { self.invalidate("尚未匹配到当前歌曲，继续识别") }
+                        else { self.report("尚未匹配到当前歌曲，继续识别") }
+                    case .outdated:
+                        self.report("识曲响应已过期，正在匹配最新音频")
                     }
                 }
             } catch {
@@ -141,7 +185,12 @@ final class AudioRecognition {
                 self?.queue.async { [weak self] in
                     guard let self, self.active, self.generation == expectedGeneration else { return }
                     self.request = nil
-                    if !cancelled { self.onError?(error.localizedDescription) }
+                    if !cancelled {
+                        self.serviceFailures += 1
+                        let backoff = min(30.0, pow(2, Double(min(5, self.serviceFailures + 1))))
+                        self.nextAttempt = ProcessInfo.processInfo.systemUptime + backoff
+                        self.onError?(error.localizedDescription)
+                    }
                 }
             }
         }
