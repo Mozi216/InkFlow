@@ -109,11 +109,6 @@ final class AudioRecognition {
         let level = sqrt(sum / Double(count))
         let now = ProcessInfo.processInfo.systemUptime
         processedSeconds += Double(count) / output.sampleRate
-        if now - lastMeter >= 0.25 {
-            lastMeter = now
-            onLevel?(level, now)
-            onProgress?(processedSeconds)
-        }
         if lastBuffer > 0, now - lastBuffer > 0.6 {
             logger.info("Audio gap \(now - self.lastBuffer) s; discard incomplete window")
             clearWindow()
@@ -123,6 +118,12 @@ final class AudioRecognition {
         if now - lastSound < 1.5, hasPublishedMatch, now - lastAcceptedEnd > 8 {
             _ = tracker.expire(at: now)
             invalidate("当前歌曲尚未确认，正在重新识别")
+        }
+        // Invalidate first: the level callback must not resume an expired song for one frame.
+        if now - lastMeter >= 0.25 {
+            lastMeter = now
+            onLevel?(level, now)
+            onProgress?(processedSeconds)
         }
         if now - lastSound > 1.5 {
             if !audio.isEmpty || request != nil { clearWindow() }
